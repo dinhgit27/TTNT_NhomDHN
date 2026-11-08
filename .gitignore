@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+# Dữ liệu & kết quả huấn luyện (nặng, không đưa lên git)
+archive.zip
+data/
+outputs/
+*.pt
+*.npy
+*.npz
+.ipynb_checkpoints/
