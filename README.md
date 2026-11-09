@@ -77,27 +77,27 @@ Sau khi huấn luyện hoàn tất trên Kaggle:
 
 ---
 
-### Bước 4: Khởi Chạy Giao Diện Web Streamlit
+### Bước 4: Khởi Chạy Giao Diện Web
 
-Khi đã có file `generator.pth` tại thư mục gốc:
+Dự án cung cấp **2 lựa chọn giao diện** tùy theo nhu cầu của bạn:
 
+#### Lựa chọn 1: Giao Diện Web Studio Hiện Đại (Khuyến nghị số 1 ⭐⭐⭐⭐⭐)
+Được xây dựng trên nền tảng **Flask REST API + TailwindCSS Glassmorphism** (Phong cách Midjourney / Apple Studio):
 ```bash
-streamlit run app.py
+python web_app.py
 ```
+* Mở trình duyệt tại: `http://localhost:5000`
+* **Ưu điểm vượt trội:**
+  * Giao diện kính mờ (Glassmorphism) đẳng cấp, tối giản, mượt mà và hiện đại.
+  * Phản hồi tức thì, không bị tải lại toàn trang (No page reload).
+  * Hiệu ứng xem ảnh phóng to toàn màn hình (Lightbox Modal) chỉ với 1 click.
+  * Tích hợp tính năng **🎬 Xuất Video GIF Biến Hình Động** để chèn trực tiếp vào slide PowerPoint thuyết trình!
 
-Trình duyệt sẽ tự động mở tại địa chỉ `http://localhost:8501`.
-
-#### Các tính năng trên giao diện Web:
-- **Sidebar (Menu điều khiển):**
-  - Tùy chỉnh **Giới tính**: Nam hoặc Nữ.
-  - Tùy chỉnh **Biểu cảm**: Mỉm cười hoặc Bình thường.
-  - Tùy chỉnh **Phụ kiện**: Có đeo kính hoặc Không đeo kính.
-  - Tùy chỉnh **Màu tóc**: Đen, Vàng, Nâu, hoặc Tự nhiên.
-  - Nhấn nút **"✨ Sinh ảnh theo yêu cầu"** để nhận khuôn mặt khớp với các lựa chọn.
-- **Main Area:**
-  - Nút bấm to **"🎲 Tạo khuôn mặt ngẫu nhiên"** tự động bốc thăm ngẫu nhiên các thuộc tính và vector nhiễu.
-  - Hiển thị ảnh sinh ra ở kích thước lớn, rõ nét với các huy hiệu (badges) thuộc tính.
-  - Nút **"📥 Tải ảnh về máy"** giúp lưu ảnh PNG về máy tính một cách thuận tiện.
+#### Lựa chọn 2: Giao Diện Streamlit Dashboard
+```bash
+python -m streamlit run app.py
+```
+* Mở trình duyệt tại: `http://localhost:8501`
 
 ---
 
