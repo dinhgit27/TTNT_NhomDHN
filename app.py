@@ -8,25 +8,33 @@ Nhiệm vụ trọng tâm:
   2. Biến Hình Không Gian Tiềm Ẩn (Latent Space Morphing):
      - Kéo thanh trượt nội suy slerp liên tục giữa 2 khuôn mặt.
      - CẢI TIẾN ĐỘT PHÁ: Tạo video ảnh động GIF Morphing chuyển động mượt mà để chèn vào Slide thuyết trình!
-  3. Báo Cáo Kỹ Thuật: Tóm lược số liệu FID 17.84, kiến trúc Minimax Game phục vụ vấn đáp đồ án.
+  3. Báo Cáo Kỹ Thuật: Tóm lược số liệu FID, kiến trúc Minimax Game phục vụ vấn đáp đồ án.
 """
 
 import io
 import os
 import random
-from typing import List, Tuple, Optional, Dict, Any
-import numpy as np
-from PIL import Image, ImageFilter
+import sys
+from typing import Any, Dict, Optional
+
+_APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _APP_ROOT not in sys.path:
+    sys.path.insert(0, _APP_ROOT)
+
 import streamlit as st
 import torch
-import torch.nn as nn
 
+from dataset import SELECTED_ATTRS
 from models import ConditionalGenerator
-from utils import denormalize
+from utils import (
+    extract_checkpoint_info,
+    generate_morph_gif_bytes,
+    slerp,
+    tensor_to_pil,
+)
 
-ATTR_NAMES = ["Male", "Smiling", "Eyeglasses", "Blond_Hair", "Black_Hair", "Brown_Hair"]
+ATTR_NAMES = SELECTED_ATTRS
 NZ = 100
-NUM_ATTRS = len(ATTR_NAMES)
 
 CANDIDATE_MODEL_PATHS = [
     "generator.pth",
@@ -119,87 +127,20 @@ def load_trained_model(model_path_or_bytes, _device: torch.device):
     else:
         checkpoint = torch.load(io.BytesIO(model_path_or_bytes), map_location=_device)
 
-    if isinstance(checkpoint, dict) and "G" in checkpoint:
-        state_dict = checkpoint["G"]
-        metadata = {
-            "epoch": checkpoint.get("epoch", 25),
-            "fid": checkpoint.get("fid", 17.84),
-        }
-    elif isinstance(checkpoint, dict):
-        state_dict = checkpoint
-        metadata = {"epoch": 25, "fid": 17.84}
-    else:
-        raise ValueError("Cấu trúc file trọng số không hợp lệ.")
+    state_dict, detected_num_attrs, meta = extract_checkpoint_info(checkpoint, nz=NZ)
+    nz_val = int(meta.get("nz", NZ))
+    ngf_val = int(meta.get("ngf", 64))
 
-    first_weight = None
-    for k, v in state_dict.items():
-        if "0.weight" in k:
-            first_weight = v
-            break
-
-    if first_weight is not None:
-        in_ch = first_weight.shape[0]
-        detected_num_attrs = max(0, in_ch - NZ)
-    else:
-        detected_num_attrs = 0
-
-    netG = ConditionalGenerator(nz=NZ, num_attrs=detected_num_attrs, ngf=64, nc=3).to(_device)
-    netG.load_state_dict(state_dict, strict=False)
+    netG = ConditionalGenerator(nz=nz_val, num_attrs=detected_num_attrs, ngf=ngf_val, nc=3).to(_device)
+    netG.load_state_dict(state_dict, strict=True)
     netG.eval()
 
+    metadata: Dict[str, Any] = {
+        "epoch": meta.get("epoch"),
+        "fid": meta.get("fid"),
+        "params_m": sum(p.numel() for p in netG.parameters()) / 1e6,
+    }
     return netG, detected_num_attrs, metadata
-
-
-def tensor_to_pil(tensor: torch.Tensor, upscale_size: int = 256, apply_smooth: bool = True) -> Image.Image:
-    """Chuyển tensor [-1, 1] sang PIL Image RGB với tùy chọn kích thước và làm mịn."""
-    tensor_unit = denormalize(tensor.detach().cpu())
-    np_img = tensor_unit.permute(1, 2, 0).numpy()
-    np_img = (np_img * 255.0).clip(0, 255).astype(np.uint8)
-    pil_img = Image.fromarray(np_img)
-    
-    if upscale_size != 64:
-        pil_img = pil_img.resize((upscale_size, upscale_size), Image.Resampling.LANCZOS)
-        if apply_smooth and upscale_size >= 256:
-            pil_img = pil_img.filter(ImageFilter.SMOOTH)
-    return pil_img
-
-
-def slerp(val: float, low: torch.Tensor, high: torch.Tensor) -> torch.Tensor:
-    """Nội suy hình cầu (Spherical Linear Interpolation) chuẩn xác cho không gian Gaussian."""
-    low_norm = low / torch.norm(low, dim=-1, keepdim=True)
-    high_norm = high / torch.norm(high, dim=-1, keepdim=True)
-    dot = (low_norm * high_norm).sum(dim=-1, keepdim=True)
-    dot = torch.clamp(dot, -1.0, 1.0)
-    omega = torch.acos(dot)
-    so = torch.sin(omega)
-    if (so.abs() < 1e-5).any():
-        return (1.0 - val) * low + val * high
-    return (torch.sin((1.0 - val) * omega) / so) * low + (torch.sin(val * omega) / so) * high
-
-
-def generate_morph_gif(netG, z_a, z_b, steps: int = 16, duration: int = 80, upscale_size: int = 256) -> bytes:
-    """Tạo file GIF động biến hình từ Face A sang Face B và quay vòng mượt mà."""
-    alphas = np.linspace(0.0, 1.0, steps)
-    loop_alphas = list(alphas) + list(reversed(alphas[1:-1]))
-    frames = []
-
-    with torch.no_grad():
-        for a in loop_alphas:
-            z_cur = slerp(float(a), z_a, z_b)
-            img_tensor = netG(z_cur)[0]
-            frame_pil = tensor_to_pil(img_tensor, upscale_size=upscale_size, apply_smooth=True)
-            frames.append(frame_pil)
-
-    buf = io.BytesIO()
-    frames[0].save(
-        buf,
-        format="GIF",
-        save_all=True,
-        append_images=frames[1:],
-        duration=duration,
-        loop=0
-    )
-    return buf.getvalue()
 
 
 def main():
@@ -212,7 +153,7 @@ def main():
     with st.sidebar:
         st.subheader("⚙️ Quản Lý Mô Hình")
         uploaded_file = st.file_uploader("📥 Tải trọng số khác (.pt, .pth):", type=["pt", "pth"])
-        
+
         netG, num_attrs, metadata = None, 0, {}
         model_name_display = ""
 
@@ -227,23 +168,40 @@ def main():
                 netG = ConditionalGenerator(nz=NZ, num_attrs=0, ngf=64, nc=3).to(device)
                 netG.eval()
                 model_name_display = "Mô hình Khởi tạo (Demo)"
-                metadata = {"epoch": 0, "fid": 99.9}
+                metadata = {"epoch": 0, "fid": None, "params_m": sum(p.numel() for p in netG.parameters()) / 1e6}
 
             st.success(f"✅ Đang dùng: **{model_name_display}**")
         except Exception as e:
             st.error(f"Lỗi nạp mô hình: {e}")
             netG = ConditionalGenerator(nz=NZ, num_attrs=0, ngf=64, nc=3).to(device)
             netG.eval()
+            metadata = {"epoch": 0, "fid": None, "params_m": sum(p.numel() for p in netG.parameters()) / 1e6}
 
         is_conditional = (num_attrs > 0)
+        fid_val = metadata.get("fid")
+        fid_display = f"{fid_val:.2f}" if isinstance(fid_val, (int, float)) else "N/A"
+        epoch_val = metadata.get("epoch")
+        epoch_display = f"{epoch_val} / 25" if epoch_val is not None else "N/A"
+        params_display = f"{metadata.get('params_m', 3.58):.2f} M"
+
         st.markdown(f"- Kiến trúc: **{'cDCGAN (Có điều kiện)' if is_conditional else 'DCGAN (Chuẩn)'}**")
-        st.markdown(f"- Điểm FID: **{metadata.get('fid', 17.84):.2f}** *(Thấp = Rất tốt)*")
-        st.markdown(f"- Tiến trình: **Epoch {metadata.get('epoch', 25)}/25**")
+        st.markdown(f"- Điểm FID: **{fid_display}**" + (" *(Thấp = Rất tốt)*" if fid_display != "N/A" else ""))
+        st.markdown(f"- Tiến trình: **Epoch {epoch_display}**")
         st.markdown(f"- Phần cứng: **`{device.type.upper()}`**")
+
+        cond_single: Optional[torch.Tensor] = None
+        if is_conditional:
+            st.markdown("---")
+            st.subheader("🏷️ Thuộc Tính Khuôn Mặt (cDCGAN)")
+            selected_vals = []
+            for attr in ATTR_NAMES[:num_attrs]:
+                checked = st.checkbox(attr, value=(attr == "Smiling"))
+                selected_vals.append(1.0 if checked else 0.0)
+            cond_single = torch.tensor([selected_vals], dtype=torch.float32, device=device)
 
         st.markdown("---")
         st.subheader("🎛️ Tinh Chỉnh Chất Lượng Ảnh")
-        
+
         # Thanh trượt Truncation Trick (Variance)
         noise_variance = st.slider(
             "Độ lệch chuẩn nhiễu (Variance / Truncation):",
@@ -275,24 +233,24 @@ def main():
     st.markdown("""
     <div class="app-header">
         <h1>🎭 AI Face Generator Studio</h1>
-        <p>Hệ thống sinh ảnh khuôn mặt người và biến hình không gian tiềm ẩn bằng Mạng Đối Nghịch (DCGAN) trên tập dữ liệu <b>CelebA</b>.</p>
+        <p>Hệ thống sinh ảnh khuôn mặt người và biến hình không gian tiềm ẩn bằng Mạng Đối Nghịch (DCGAN / cDCGAN) trên tập dữ liệu <b>CelebA</b>.</p>
     </div>
     """, unsafe_allow_html=True)
 
     # Thống kê nhanh
     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
     with col_m1:
-        st.markdown('<div class="metric-card"><div class="metric-val">17.84</div><div class="metric-lbl">🏆 Điểm FID Đạt Được</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-val">{fid_display}</div><div class="metric-lbl">🏆 Điểm FID Đạt Được</div></div>', unsafe_allow_html=True)
     with col_m2:
-        st.markdown('<div class="metric-card"><div class="metric-val">25 / 25</div><div class="metric-lbl">🔄 Epoch Hoàn Thành</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-val">{epoch_display}</div><div class="metric-lbl">🔄 Epoch Hoàn Thành</div></div>', unsafe_allow_html=True)
     with col_m3:
-        st.markdown('<div class="metric-card"><div class="metric-val">3.58 M</div><div class="metric-lbl">🧠 Số Lượng Tham Số</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-val">{params_display}</div><div class="metric-lbl">🧠 Số Lượng Tham Số</div></div>', unsafe_allow_html=True)
     with col_m4:
         st.markdown(f'<div class="metric-card"><div class="metric-val">{device.type.upper()}</div><div class="metric-lbl">⚡ Bộ Xử Lý</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 2 TAB TRỌNG TÂM DUY NHẤT
+    # 3 TAB TRỌNG TÂM
     tab_studio, tab_morph, tab_guide = st.tabs([
         "🎨 1. Studio Sinh Ảnh Khuôn Mặt",
         "🌊 2. Biến Hình Tiềm Ẩn (Morphing)",
@@ -305,9 +263,9 @@ def main():
     with tab_studio:
         col_btn1, col_btn2, col_grid_mode = st.columns([2, 2, 2])
         with col_btn1:
-            btn_random = st.button("🎲 Sinh Khuôn Mặt Mới", type="primary", use_container_width=True)
+            btn_random = st.button("🎲 Sinh Khuôn Mặt Mới", type="primary", width="stretch")
         with col_btn2:
-            btn_re_render = st.button("🔄 Đổi Hạt Giống (Random Seed)", use_container_width=True)
+            btn_re_render = st.button("🔄 Đổi Hạt Giống (Random Seed)", width="stretch")
         with col_grid_mode:
             grid_choice = st.selectbox("Số lượng ảnh hiển thị:", ["Lưới 4 Biến Thể", "1 Ảnh Chi Tiết Lớn", "2 Ảnh Đối Chiếu"], index=0)
 
@@ -321,8 +279,9 @@ def main():
         torch.manual_seed(used_seed)
 
         with torch.no_grad():
-            z = torch.randn(num_faces, NZ, device=device) * noise_variance
-            generated_tensors = netG(z)
+            z = torch.randn(num_faces, netG.nz, device=device) * noise_variance
+            cond_batch = cond_single.repeat(num_faces, 1) if cond_single is not None else None
+            generated_tensors = netG(z, cond_batch) if cond_batch is not None else netG(z)
 
         pil_images = [tensor_to_pil(generated_tensors[k], upscale_size=render_size) for k in range(num_faces)]
 
@@ -333,7 +292,7 @@ def main():
         if num_faces == 1:
             col_l, col_center, col_r = st.columns([1, 2, 1])
             with col_center:
-                st.image(pil_images[0], use_container_width=True, caption=f"Khuôn mặt AI tổng hợp (Seed: {used_seed})")
+                st.image(pil_images[0], width="stretch", caption=f"Khuôn mặt AI tổng hợp (Seed: {used_seed})")
                 buf = io.BytesIO()
                 pil_images[0].save(buf, format="PNG")
                 st.download_button(
@@ -341,13 +300,13 @@ def main():
                     data=buf.getvalue(),
                     file_name=f"ai_face_seed_{used_seed}.png",
                     mime="image/png",
-                    use_container_width=True
+                    width="stretch"
                 )
         else:
             cols = st.columns(num_faces)
             for idx, col in enumerate(cols):
                 with col:
-                    st.image(pil_images[idx], use_container_width=True, caption=f"Biến thể #{idx + 1}")
+                    st.image(pil_images[idx], width="stretch", caption=f"Biến thể #{idx + 1}")
                     buf = io.BytesIO()
                     pil_images[idx].save(buf, format="PNG")
                     st.download_button(
@@ -355,7 +314,7 @@ def main():
                         data=buf.getvalue(),
                         file_name=f"ai_face_var_{idx + 1}.png",
                         mime="image/png",
-                        use_container_width=True
+                        width="stretch"
                     )
 
     # ----------------------------------------------------
@@ -380,7 +339,7 @@ def main():
         with col_btn_new_pair:
             st.write("")
             st.write("")
-            if st.button("🎲 Đổi Cặp Khuôn Mặt Khác", use_container_width=True):
+            if st.button("🎲 Đổi Cặp Khuôn Mặt Khác", width="stretch"):
                 st.session_state["morph_seed_a"] = random.randint(1, 10000)
                 st.session_state["morph_seed_b"] = random.randint(10001, 20000)
                 st.rerun()
@@ -390,49 +349,60 @@ def main():
 
         # Tính toán vector nội suy
         torch.manual_seed(seed_a)
-        z_a = torch.randn(1, NZ, device=device) * noise_variance
+        z_a = torch.randn(1, netG.nz, device=device) * noise_variance
         torch.manual_seed(seed_b)
-        z_b = torch.randn(1, NZ, device=device) * noise_variance
-        z_interpolated = slerp(alpha, z_a, z_b)
+        z_b = torch.randn(1, netG.nz, device=device) * noise_variance
+        z_interpolated = slerp(z_a, z_b, alpha)
 
         with torch.no_grad():
-            img_a = tensor_to_pil(netG(z_a)[0], upscale_size=render_size)
-            img_b = tensor_to_pil(netG(z_b)[0], upscale_size=render_size)
-            img_morph = tensor_to_pil(netG(z_interpolated)[0], upscale_size=render_size)
+            t_a = netG(z_a, cond_single)[0] if cond_single is not None else netG(z_a)[0]
+            t_b = netG(z_b, cond_single)[0] if cond_single is not None else netG(z_b)[0]
+            t_m = netG(z_interpolated, cond_single)[0] if cond_single is not None else netG(z_interpolated)[0]
+            img_a = tensor_to_pil(t_a, upscale_size=render_size)
+            img_b = tensor_to_pil(t_b, upscale_size=render_size)
+            img_morph = tensor_to_pil(t_m, upscale_size=render_size)
 
         col_show_a, col_show_mid, col_show_b = st.columns([1, 2, 1])
         with col_show_a:
-            st.image(img_a, caption="Gốc: Face A (0%)", use_container_width=True)
+            st.image(img_a, caption="Gốc: Face A (0%)", width="stretch")
         with col_show_mid:
-            st.image(img_morph, caption=f"✨ Trạng thái trung gian ({int(alpha * 100)}%)", use_container_width=True)
+            st.image(img_morph, caption=f"✨ Trạng thái trung gian ({int(alpha * 100)}%)", width="stretch")
         with col_show_b:
-            st.image(img_b, caption="Đích: Face B (100%)", use_container_width=True)
+            st.image(img_b, caption="Đích: Face B (100%)", width="stretch")
 
         # CẢI TIẾN ĐỘT PHÁ: TẠO VIDEO GIF BIẾN HÌNH MƯỢT MÀ
         st.markdown("---")
         st.markdown("##### 🎬 Cải tiến đồ án: Xuất Video GIF Biến Hình Động (Animated GIF)")
-        st.caption("Tạo video vòng lặp biến hình từ Face A $\rightarrow$ Face B $\rightarrow$ Face A để chèn trực tiếp vào Slide thuyết trình PowerPoint hoặc Báo cáo!")
+        st.caption(r"Tạo video vòng lặp biến hình từ Face A $\rightarrow$ Face B $\rightarrow$ Face A để chèn trực tiếp vào Slide thuyết trình PowerPoint hoặc Báo cáo!")
 
         col_gif_btn, col_gif_status = st.columns([2, 4])
         with col_gif_btn:
-            create_gif_btn = st.button("🎥 Tạo Video GIF Biến Hình", type="primary", use_container_width=True)
+            create_gif_btn = st.button("🎥 Tạo Video GIF Biến Hình", type="primary", width="stretch")
 
         if create_gif_btn:
             with st.spinner("Đang tính toán các khung hình nội suy và xuất file GIF động..."):
-                gif_bytes = generate_morph_gif(netG, z_a, z_b, steps=18, duration=80, upscale_size=render_size)
+                gif_bytes = generate_morph_gif_bytes(
+                    netG,
+                    z_a,
+                    z_b,
+                    conditions=cond_single,
+                    steps=18,
+                    duration=80,
+                    upscale_size=render_size,
+                )
                 st.session_state["cached_gif"] = gif_bytes
             st.success("Tạo file GIF động thành công!")
 
         if "cached_gif" in st.session_state:
             c_gif_l, c_gif_center, c_gif_r = st.columns([1, 2, 1])
             with c_gif_center:
-                st.image(st.session_state["cached_gif"], caption="Video GIF Biến Hình Hoàn Chỉnh (Chuyển động liên tục)", use_container_width=True)
+                st.image(st.session_state["cached_gif"], caption="Video GIF Biến Hình Hoàn Chỉnh (Chuyển động liên tục)", width="stretch")
                 st.download_button(
                     label="📥 Tải Video GIF Động Về Máy (.GIF)",
                     data=st.session_state["cached_gif"],
                     file_name=f"face_morphing_{seed_a}_to_{seed_b}.gif",
                     mime="image/gif",
-                    use_container_width=True
+                    width="stretch"
                 )
 
     # ----------------------------------------------------
@@ -440,13 +410,13 @@ def main():
     # ----------------------------------------------------
     with tab_guide:
         st.markdown("### 📊 Báo Cáo Đánh Giá & Các Đề Xuất Cải Tiến Đồ Án")
-        st.markdown(r"""
+        st.markdown(rf"""
         #### 1. Đánh giá kết quả huấn luyện (Kaggle Benchmark)
-        - **Chỉ số Fréchet Inception Distance (FID):** **`17.84`**  
-          *(Mức chuẩn của DCGAN trên CelebA dao động từ 20 đến 35. Đạt 17.84 thể hiện mạng học rất tốt, đa dạng phong phú, không bị Mode Collapse).*
+        - **Chỉ số Fréchet Inception Distance (FID):** **`{fid_display}`**  
+          *(Mức chuẩn của DCGAN trên CelebA dao động từ 20 đến 35. Đạt {fid_display} thể hiện mạng học rất tốt, đa dạng phong phú, không bị Mode Collapse).*
         - **Hàm mất mát (Objective):** Cân bằng Minimax Game giữa Generator và Discriminator:
-          $$\min_G \max_D V(D, G) = \mathbb{E}_{x \sim p_{\text{data}}}[\log D(x)] + \mathbb{E}_{z \sim p_z}[\log(1 - D(G(z)))]$$
-        - **Số lượng tham số:** $3.58\text{M}$ tham số (Gọn nhẹ, suy luận theo thời gian thực trên CPU).
+          $$\min_G \max_D V(D, G) = \mathbb{{E}}_{{x \sim p_{{\text{{data}}}}}}[\log D(x)] + \mathbb{{E}}_{{z \sim p_z}}[\log(1 - D(G(z)))]$$
+        - **Số lượng tham số:** ${params_display.replace(' M', '')}\text{{M}}$ tham số (Gọn nhẹ, suy luận theo thời gian thực trên CPU).
 
         ---
 
@@ -454,7 +424,7 @@ def main():
         Nếu Thầy/Cô hỏi: *"Dự án này có thể mở rộng và phát triển thêm những hướng nào?"*, bạn có thể tự tin nêu các cải tiến sau:
         1. **Mạng Sinh Có Điều Kiện (cDCGAN - Conditional GAN):** Nhúng thêm vector nhãn thuộc tính (Nam/Nữ, Nụ cười, Kính mắt) để người dùng có thể chủ động ra lệnh cho AI sinh theo ý muốn.
         2. **Nâng cấp độ phân giải bằng Super-Resolution (ESRGAN):** Đưa ảnh từ $64\times 64$ qua một mạng siêu phân giải để nâng lên $256\times 256$ hoặc $512\times 512$ cực kỳ sắc nét mà không tốn công huấn luyện lại GAN từ đầu.
-        3. **Phép tính véc-tơ khuôn mặt (Latent Vector Arithmetic):** Thực hiện phép cộng trừ khái niệm: $\mathbf{z}_{\text{nam cười}} - \mathbf{z}_{\text{nam không cười}} + \mathbf{z}_{\text{nữ không cười}} = \mathbf{z}_{\text{nữ cười}}$.
+        3. **Phép tính véc-tơ khuôn mặt (Latent Vector Arithmetic):** Thực hiện phép cộng trừ khái niệm: $\mathbf{{z}}_{{\text{{nam cười}}}} - \mathbf{{z}}_{{\text{{nam không cười}}}} + \mathbf{{z}}_{{\text{{nữ không cười}}}} = \mathbf{{z}}_{{\text{{nữ cười}}}}$.
         """)
 
 

@@ -17,12 +17,15 @@ from __future__ import annotations
 
 import argparse
 import os
+import warnings
 from typing import Iterable
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy import linalg
+
+from .utils import ensure_utf8_stdio
 
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -66,10 +69,14 @@ def stats_from_activations(act: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def frechet_distance(mu1, sigma1, mu2, sigma2, eps: float = 1e-6) -> float:
     diff = mu1 - mu2
-    covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", linalg.LinAlgWarning)
+        covmean = linalg.sqrtm(sigma1.dot(sigma2))
     if not np.isfinite(covmean).all():  # ổn định số học
         offset = np.eye(sigma1.shape[0]) * eps
-        covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", linalg.LinAlgWarning)
+            covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
     if np.iscomplexobj(covmean):
         covmean = covmean.real
     return float(diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * np.trace(covmean))
@@ -87,17 +94,24 @@ def stats_from_tensor(images: torch.Tensor, model: InceptionFeatures, batch_size
 def real_stats(npy_path: str, model: InceptionFeatures, n: int = 10000, cache: str | None = None,
                batch_size: int = 100, seed: int = 0):
     """Thống kê của ảnh thật (có cache ra .npz để không tính lại)."""
-    if cache and os.path.isfile(cache):
-        d = np.load(cache)
-        if int(d["n"]) == n:
-            return d["mu"], d["sigma"]
     from .dataset import CelebA64
 
-    images = CelebA64(npy_path, flip=False).sample(n, seed=seed)
+    ds = CelebA64(npy_path, flip=False)
+    actual_n = min(n, len(ds))
+    if actual_n < 2:
+        raise ValueError(f"Cần ít nhất 2 ảnh thật để tính FID, hiện có {actual_n}.")
+
+    if cache and os.path.isfile(cache):
+        d = np.load(cache)
+        cached_total = int(d["total"]) if "total" in d else -1
+        if int(d["n"]) == actual_n and cached_total == len(ds):
+            return d["mu"], d["sigma"]
+
+    images = ds.sample(actual_n, seed=seed)
     mu, sigma = stats_from_tensor(images, model, batch_size)
     if cache:
         os.makedirs(os.path.dirname(os.path.abspath(cache)), exist_ok=True)
-        np.savez(cache, mu=mu, sigma=sigma, n=n)
+        np.savez(cache, mu=mu, sigma=sigma, n=actual_n, total=len(ds))
     return mu, sigma
 
 
@@ -106,10 +120,16 @@ def generator_images(G: torch.nn.Module, n: int, device, batch_size: int = 250):
     """Sinh n ảnh từ G, trả về từng batch (CPU) để tiết kiệm bộ nhớ."""
     was_training = G.training
     G.eval()
+    num_attrs = int(getattr(G, "num_attrs", 0))
     done = 0
     while done < n:
         b = min(batch_size, n - done)
-        yield G(G.sample_noise(b, device)).cpu()
+        z = G.sample_noise(b, device) if hasattr(G, "sample_noise") else torch.randn(b, G.nz, 1, 1, device=device)
+        if num_attrs > 0:
+            cond = torch.randint(0, 2, (b, num_attrs), dtype=torch.float32, device=device)
+            yield G(z, cond).cpu()
+        else:
+            yield G(z).cpu()
         done += b
     G.train(was_training)
 
@@ -121,19 +141,30 @@ def fid_of_generator(G, mu_r, sigma_r, model: InceptionFeatures, n: int = 5000, 
 
 
 def _load_folder_or_npy(path: str, limit: int) -> torch.Tensor:
-    if path.endswith(".npy"):
+    if path.lower().endswith(".npy"):
         arr = np.load(path, mmap_mode="r")[:limit]
-        arr = torch.from_numpy(np.ascontiguousarray(arr))
+        arr = torch.from_numpy(np.array(arr, copy=True))
     else:
         import cv2
 
+        if not os.path.isdir(path):
+            raise FileNotFoundError(f"Không tìm thấy thư mục ảnh: {path}")
         files = sorted(f for f in os.listdir(path) if f.lower().endswith((".png", ".jpg", ".jpeg")))[:limit]
-        imgs = [cv2.cvtColor(cv2.resize(cv2.imread(os.path.join(path, f)), (64, 64)), cv2.COLOR_BGR2RGB) for f in files]
+        imgs = []
+        for f in files:
+            buf = np.fromfile(os.path.join(path, f), dtype=np.uint8)
+            raw = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+            if raw is None:
+                continue
+            imgs.append(cv2.cvtColor(cv2.resize(raw, (64, 64), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB))
+        if not imgs:
+            raise ValueError(f"Không tìm thấy ảnh hợp lệ nào trong '{path}'.")
         arr = torch.from_numpy(np.stack(imgs))
     return arr.permute(0, 3, 1, 2).float().div_(127.5).sub_(1.0)
 
 
 def main() -> None:
+    ensure_utf8_stdio()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--real", required=True, help=".npy ảnh thật đã tiền xử lý")
     p.add_argument("--fake", required=True, help="thư mục ảnh hoặc .npy (N,H,W,3 uint8) ảnh sinh")

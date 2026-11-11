@@ -22,19 +22,31 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+from .utils import ensure_utf8_stdio
+
 _ZIP: zipfile.ZipFile | None = None
 _CFG: dict = {}
+
+
+def _is_image_entry(path: str) -> bool:
+    parts = path.replace("\\", "/").split("/")
+    base = parts[-1]
+    return (
+        "__MACOSX" not in parts
+        and not base.startswith("._")
+        and base.lower().endswith((".jpg", ".jpeg", ".png"))
+    )
 
 
 def list_images(src: str) -> list[str]:
     """Liệt kê tên ảnh (đã sắp xếp) trong file zip hoặc thư mục."""
     if os.path.isfile(src) and src.lower().endswith(".zip"):
         with zipfile.ZipFile(src) as zf:
-            names = [n for n in zf.namelist() if n.lower().endswith((".jpg", ".jpeg", ".png"))]
+            names = [n for n in zf.namelist() if _is_image_entry(n)]
     elif os.path.isdir(src):
         names = []
         for root, _, files in os.walk(src):
-            names += [os.path.join(root, f) for f in files if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+            names += [os.path.join(root, f) for f in files if _is_image_entry(os.path.join(root, f))]
     else:
         raise FileNotFoundError(f"Không tìm thấy nguồn dữ liệu: {src}")
     return sorted(names)
@@ -59,9 +71,10 @@ def _process(name: str) -> np.ndarray | None:
     try:
         if _ZIP is not None:
             buf = np.frombuffer(_ZIP.read(name), dtype=np.uint8)
-            img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
         else:
-            img = cv2.imread(name, cv2.IMREAD_COLOR)
+            # Dùng np.fromfile để hỗ trợ đường dẫn có dấu tiếng Việt trên Windows
+            buf = np.fromfile(name, dtype=np.uint8)
+        img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
         if img is None:
             return None
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -70,7 +83,23 @@ def _process(name: str) -> np.ndarray | None:
         return None
 
 
+def _truncate_npy(dst: str, n_ok: int, size: int) -> None:
+    """Cắt bớt phần dư của file .npy memmap an toàn trên Windows (tránh ghi đè khi đang mmap)."""
+    tmp_dst = dst + ".tmp.npy"
+    src_mm = np.load(dst, mmap_mode="r")
+    dst_mm = np.lib.format.open_memmap(tmp_dst, mode="w+", dtype=np.uint8, shape=(n_ok, size, size, 3))
+    chunk = 4096
+    for i in range(0, n_ok, chunk):
+        j = min(i + chunk, n_ok)
+        dst_mm[i:j] = src_mm[i:j]
+    dst_mm.flush()
+    del dst_mm
+    del src_mm
+    os.replace(tmp_dst, dst)
+
+
 def main() -> None:
+    ensure_utf8_stdio()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--src", default="archive.zip", help="file zip hoặc thư mục chứa ảnh CelebA aligned")
     p.add_argument("--dst", default="data/processed/celeba_64.npy")
@@ -89,19 +118,20 @@ def main() -> None:
     out = np.lib.format.open_memmap(a.dst, mode="w+", dtype=np.uint8, shape=(len(names), a.size, a.size, 3))
 
     n_ok, n_bad = 0, 0
-    with Pool(a.workers, initializer=_init_worker, initargs=(a.src, a.crop, a.size)) as pool:
-        for arr in tqdm(pool.imap(_process, names, chunksize=256), total=len(names), desc="preprocess"):
-            if arr is None:
-                n_bad += 1
-                continue
-            out[n_ok] = arr
-            n_ok += 1
+    if names:
+        workers = max(1, a.workers)
+        with Pool(workers, initializer=_init_worker, initargs=(a.src, a.crop, a.size)) as pool:
+            for arr in tqdm(pool.imap(_process, names, chunksize=256), total=len(names), desc="preprocess"):
+                if arr is None:
+                    n_bad += 1
+                    continue
+                out[n_ok] = arr
+                n_ok += 1
     out.flush()
     del out
 
     if n_bad:  # cắt bớt phần thừa nếu có ảnh lỗi
-        data = np.load(a.dst, mmap_mode="r")[:n_ok]
-        np.save(a.dst, np.ascontiguousarray(data))
+        _truncate_npy(a.dst, n_ok, a.size)
     meta = {"count": n_ok, "bad": n_bad, "size": a.size, "crop": a.crop, "source": os.path.basename(a.src)}
     with open(os.path.splitext(a.dst)[0] + "_meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)

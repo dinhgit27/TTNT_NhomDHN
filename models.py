@@ -46,6 +46,7 @@ class ConditionalGenerator(nn.Module):
     và giải chập liên tiếp để đạt kích thước ảnh (3, 64, 64).
     Hỗ trợ cả trường hợp num_attrs = 0 (Unconditional DCGAN).
     """
+
     def __init__(self, nz: int = 100, num_attrs: int = 6, ngf: int = 64, nc: int = 3):
         """
         Tham số:
@@ -97,7 +98,11 @@ class ConditionalGenerator(nn.Module):
         if noise.dim() == 2:
             noise = noise.unsqueeze(2).unsqueeze(3)  # Chuyển (B, nz) -> (B, nz, 1, 1)
 
-        if self.num_attrs > 0 and conditions is not None:
+        if self.num_attrs > 0:
+            if conditions is None:
+                raise ValueError(
+                    f"ConditionalGenerator (num_attrs={self.num_attrs}) yêu cầu truyền tensor conditions."
+                )
             if conditions.dim() == 2:
                 conditions = conditions.unsqueeze(2).unsqueeze(3)  # Chuyển (B, num_attrs) -> (B, num_attrs, 1, 1)
             z_c = torch.cat([noise, conditions], dim=1)  # (B, nz + num_attrs, 1, 1)
@@ -106,6 +111,10 @@ class ConditionalGenerator(nn.Module):
 
         return self.net(z_c)
 
+    def sample_noise(self, n: int, device=None) -> torch.Tensor:
+        """Sinh batch véc-tơ nhiễu ngẫu nhiên N(0, 1) kích thước (n, nz, 1, 1)."""
+        return torch.randn(n, self.nz, 1, 1, device=device)
+
 
 class ConditionalDiscriminator(nn.Module):
     """
@@ -113,6 +122,7 @@ class ConditionalDiscriminator(nn.Module):
     Nhận ảnh x (3, 64, 64) và mở rộng véc-tơ điều kiện c thành các kênh không gian (num_attrs, 64, 64).
     Ghép lại thành tensor (3 + num_attrs, 64, 64) và đi qua các tầng tích chập để đưa ra xác suất Thật/Giả.
     """
+
     def __init__(self, num_attrs: int = 6, ndf: int = 64, nc: int = 3):
         """
         Tham số:
@@ -191,6 +201,8 @@ def build_cDCGAN(
 
 
 if __name__ == "__main__":
+    from utils import ensure_utf8_stdio
+    ensure_utf8_stdio()
     # Test kiểm tra nhanh kích thước tensor và số lượng tham số
     print("--- KIỂM TRA MÔ HÌNH cDCGAN (MODELS.PY) ---")
     device = torch.device("cpu")

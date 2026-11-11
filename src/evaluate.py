@@ -1,4 +1,4 @@
-"""Giai đoạn 4 - Module đánh giá mô hình đã huấn luyện.
+"""Giai đoạn 4 - Module đánh giá mô hình đã huấn luyện (hỗ trợ cả DCGAN và cDCGAN).
 
 Sinh ra trong thư mục ``--out``:
   * ``generated_grid.png``    : lưới 64 khuôn mặt mới từ nhiễu ngẫu nhiên
@@ -11,7 +11,7 @@ Sinh ra trong thư mục ``--out``:
 
 Ví dụ::
 
-    python -m src.evaluate --ckpt outputs/run1/best_fid.pt --data data/processed/celeba_64.npy --out outputs/run1/eval
+    python -m src.evaluate --ckpt generator.pth --data data/processed/celeba_64.npy --out outputs/eval
 """
 from __future__ import annotations
 
@@ -25,28 +25,45 @@ from PIL import Image
 
 from .dataset import CelebA64, to_unit_range
 from .fid import InceptionFeatures, frechet_distance, generator_images, real_stats, stats_from_activations, get_activations
-from .models import Generator
-from .utils import diversity_score, save_grid, slerp
+from .models import ConditionalGenerator
+from .utils import diversity_score, ensure_utf8_stdio, extract_checkpoint_info, save_grid, slerp
 
 
-def load_generator(ckpt_path: str, device) -> Generator:
+def load_generator(ckpt_path: str, device) -> tuple[ConditionalGenerator, int | None]:
     ck = torch.load(ckpt_path, map_location=device)
-    args = ck["args"]
-    G = Generator(args["nz"], args["ngf"]).to(device)
-    G.load_state_dict(ck["G"])
+    state_dict, num_attrs, meta = extract_checkpoint_info(ck)
+    G = ConditionalGenerator(
+        nz=int(meta.get("nz", 100)),
+        num_attrs=num_attrs,
+        ngf=int(meta.get("ngf", 64)),
+        nc=3,
+    ).to(device)
+    G.load_state_dict(state_dict, strict=True)
     G.eval()
-    return G
+    return G, meta.get("epoch")
+
+
+def _sample_from_generator(G: ConditionalGenerator, n: int, device) -> torch.Tensor:
+    z = G.sample_noise(n, device)
+    if G.num_attrs > 0:
+        cond = torch.randint(0, 2, (n, G.num_attrs), dtype=torch.float32, device=device)
+        return G(z, cond)
+    return G(z)
 
 
 @torch.no_grad()
-def interpolation_grid(G, device, rows: int = 8, steps: int = 10, seed: int = 0) -> torch.Tensor:
+def interpolation_grid(G: ConditionalGenerator, device, rows: int = 8, steps: int = 10, seed: int = 0) -> torch.Tensor:
     g = torch.Generator(device).manual_seed(seed)
     out = []
     for _ in range(rows):
         z0 = torch.randn(1, G.nz, 1, 1, device=device, generator=g)
         z1 = torch.randn(1, G.nz, 1, 1, device=device, generator=g)
         zs = torch.cat([slerp(z0[0], z1[0], t / (steps - 1)).unsqueeze(0) for t in range(steps)])
-        out.append(G(zs).cpu())
+        if G.num_attrs > 0:
+            c = torch.randint(0, 2, (1, G.num_attrs), dtype=torch.float32, device=device, generator=g).repeat(steps, 1)
+            out.append(G(zs, c).cpu())
+        else:
+            out.append(G(zs).cpu())
     return torch.cat(out)
 
 
@@ -57,8 +74,9 @@ def nearest_real(fake: torch.Tensor, real_pool: torch.Tensor) -> torch.Tensor:
 
 
 def main() -> None:
+    ensure_utf8_stdio()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--ckpt", required=True, help="best_fid.pt / last.pt / checkpoints/G_epoch_XXX.pt")
+    p.add_argument("--ckpt", required=True, help="generator.pth / best_fid.pt / last.pt / checkpoints/G_epoch_XXX.pt")
     p.add_argument("--data", default="data/processed/celeba_64.npy")
     p.add_argument("--out", default="outputs/eval")
     p.add_argument("--n-fid", type=int, default=10000, help="số ảnh sinh dùng tính FID")
@@ -71,12 +89,12 @@ def main() -> None:
     dev = torch.device(a.device)
     os.makedirs(a.out, exist_ok=True)
     torch.manual_seed(a.seed)
-    G = load_generator(a.ckpt, dev)
+    G, epoch_val = load_generator(a.ckpt, dev)
     ds = CelebA64(a.data, flip=False)
 
     # --- định tính ---
     with torch.no_grad():
-        fake64 = G(G.sample_noise(64, dev)).cpu()
+        fake64 = _sample_from_generator(G, 64, dev).cpu()
     save_grid(fake64, os.path.join(a.out, "generated_grid.png"))
     save_grid(ds.sample(64, seed=a.seed), os.path.join(a.out, "real_grid.png"))
     interp = interpolation_grid(G, dev, seed=a.seed)
@@ -87,7 +105,7 @@ def main() -> None:
 
     # --- chống mode collapse: độ đa dạng ---
     with torch.no_grad():
-        fake_div = G(G.sample_noise(500, dev)).cpu()
+        fake_div = _sample_from_generator(G, 500, dev).cpu()
     div_fake = diversity_score(fake_div)
     div_real = diversity_score(ds.sample(500, seed=a.seed))
 
@@ -109,10 +127,17 @@ def main() -> None:
                 Image.fromarray(arr).save(os.path.join(gdir, f"{i:05d}.png"))
                 i += 1
 
-    report = {"checkpoint": a.ckpt, "epoch": torch.load(a.ckpt, map_location="cpu").get("epoch"),
-              "fid": fid, "n_fid_fake": a.n_fid, "n_fid_real": a.n_real,
-              "diversity_fake": div_fake, "diversity_real": div_real,
-              "diversity_ratio": div_fake / div_real}
+    report = {
+        "checkpoint": a.ckpt,
+        "epoch": epoch_val,
+        "num_attrs": G.num_attrs,
+        "fid": fid,
+        "n_fid_fake": a.n_fid,
+        "n_fid_real": min(a.n_real, len(ds)),
+        "diversity_fake": div_fake,
+        "diversity_real": div_real,
+        "diversity_ratio": (div_fake / div_real) if div_real > 0 else 0.0,
+    }
     with open(os.path.join(a.out, "eval_report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
     print(json.dumps(report, indent=2))

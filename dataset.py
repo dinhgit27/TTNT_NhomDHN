@@ -12,12 +12,15 @@ Nhiệm vụ:
   3. Cung cấp DataLoader và cơ chế chạy thử nghiệm (mock/smoke test) trên máy cục bộ khi chưa có tập dữ liệu đầy đủ.
 """
 
+import csv
 import os
 from typing import List, Optional, Tuple
 from PIL import Image
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
+
+from utils import ensure_utf8_stdio
 
 # 6 thuộc tính khuôn mặt quan trọng được lựa chọn làm véc-tơ điều kiện
 # Thuộc tính trong CelebA gốc: 1 = Có thuộc tính, -1 = Không có thuộc tính
@@ -29,6 +32,7 @@ SELECTED_ATTRS = [
     "Black_Hair",   # Tóc đen: 1 = Có, 0 = Không
     "Brown_Hair"    # Tóc nâu: 1 = Có, 0 = Không
 ]
+
 
 def get_transforms(image_size: int = 64) -> transforms.Compose:
     """
@@ -49,7 +53,8 @@ def get_transforms(image_size: int = 64) -> transforms.Compose:
 class CelebAAttributeDataset(Dataset):
     """
     Custom Dataset nạp ảnh CelebA kèm theo véc-tơ thuộc tính điều kiện (condition vector).
-    Hỗ trợ đọc từ thư mục local hoặc fallback về dữ liệu giả lập (dummy) nếu đang test code.
+    Hỗ trợ cả list_attr_celeba.txt (khoảng trắng) lẫn list_attr_celeba.csv (dấu phẩy, Kaggle),
+    hoặc fallback về dữ liệu giả lập (dummy) nếu chưa có tập dữ liệu đầy đủ.
     """
     def __init__(
         self,
@@ -62,19 +67,20 @@ class CelebAAttributeDataset(Dataset):
         """
         Tham số:
             img_dir: Đường dẫn đến thư mục chứa ảnh (vd: data/celeba/img_align_celeba)
-            attr_file: Đường dẫn đến file list_attr_celeba.txt
+            attr_file: Đường dẫn đến file list_attr_celeba.txt hoặc list_attr_celeba.csv
             selected_attrs: Danh sách tên thuộc tính cần trích xuất
             transform: Chuỗi biến đổi áp dụng lên ảnh
             limit: Giới hạn số lượng ảnh (dùng để test nhanh/smoke test)
         """
+        ensure_utf8_stdio()
         self.img_dir = img_dir
         self.attr_file = attr_file
         self.selected_attrs = selected_attrs
         self.transform = transform if transform is not None else get_transforms()
-        
+
         self.image_names: List[str] = []
         self.labels: List[torch.Tensor] = []
-        
+
         # Kiểm tra xem thư mục dữ liệu thật có tồn tại không
         if os.path.isdir(img_dir) and attr_file and os.path.isfile(attr_file):
             self._load_dataset(limit)
@@ -82,42 +88,65 @@ class CelebAAttributeDataset(Dataset):
             # Fallback: Nếu chưa có bộ dữ liệu thật, tạo 100 mẫu giả lập để debug trên CPU mà không bị crash
             print(f"[CẢNH BÁO] Không tìm thấy dữ liệu CelebA tại '{img_dir}' hoặc file '{attr_file}'.")
             print("Đang khởi tạo 100 mẫu dữ liệu giả lập (Synthetic/Dummy Data) để kiểm thử luồng code...")
-            self.image_names = [f"dummy_{i:04d}.jpg" for i in range(100)]
-            self.labels = [torch.randint(0, 2, (len(self.selected_attrs),), dtype=torch.float32) for _ in range(100)]
+            n_dummy = min(100, limit) if limit > 0 else 100
+            self.image_names = [f"dummy_{i:04d}.jpg" for i in range(n_dummy)]
+            self.labels = [torch.randint(0, 2, (len(self.selected_attrs),), dtype=torch.float32) for _ in range(n_dummy)]
             self.is_dummy = True
             return
 
         self.is_dummy = False
 
-    def _load_dataset(self, limit: int):
-        """Đọc và trích xuất nhãn từ file list_attr_celeba.txt."""
+    def _parse_attr_rows(self) -> Tuple[List[str], List[List[str]]]:
+        """Đọc header thuộc tính và các dòng dữ liệu từ file .csv hoặc .txt."""
         with open(self.attr_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            
-        # Dòng 1: Tổng số ảnh trong dataset
-        # Dòng 2: Danh sách 40 tên thuộc tính
-        all_attr_names = lines[1].strip().split()
-        attr_indices = [all_attr_names.index(attr) for attr in self.selected_attrs if attr in all_attr_names]
-        
+            first_line = f.readline().strip()
+            f.seek(0)
+            is_csv = self.attr_file.lower().endswith(".csv") or "," in first_line
+            if is_csv:
+                rows = [r for r in csv.reader(f) if r]
+                if not rows:
+                    raise ValueError(f"File thuộc tính CSV rỗng: {self.attr_file}")
+                # Header CSV: [image_id, attr_1, ..., attr_40]
+                return [c.strip() for c in rows[0][1:]], rows[1:]
+
+            lines = [ln.strip() for ln in f if ln.strip()]
+            if len(lines) < 2:
+                raise ValueError(f"File thuộc tính TXT không hợp lệ: {self.attr_file}")
+            # Định dạng CelebA .txt: dòng 0 có thể là tổng số ảnh, dòng kế tiếp là danh sách thuộc tính
+            start_idx = 1 if lines[0].isdigit() else 0
+            all_attr_names = lines[start_idx].split()
+            data_rows = [ln.split() for ln in lines[start_idx + 1:]]
+            return all_attr_names, data_rows
+
+    def _load_dataset(self, limit: int):
+        """Đọc và trích xuất nhãn từ file thuộc tính CelebA."""
+        all_attr_names, data_rows = self._parse_attr_rows()
+        missing = [attr for attr in self.selected_attrs if attr not in all_attr_names]
+        if missing:
+            raise ValueError(
+                f"Không tìm thấy các thuộc tính {missing} trong '{self.attr_file}'. "
+                f"Header đọc được: {all_attr_names[:10]}"
+            )
+        attr_indices = [all_attr_names.index(attr) for attr in self.selected_attrs]
+        max_idx = max(attr_indices) if attr_indices else -1
+
         print(f"Đã trích xuất {len(attr_indices)} thuộc tính điều kiện: {self.selected_attrs}")
-        
-        # Các dòng tiếp theo: [image_name, attr_1, attr_2, ..., attr_40]
-        data_lines = lines[2:]
+
         if limit > 0:
-            data_lines = data_lines[:limit]
-            
-        for line in data_lines:
-            parts = line.strip().split()
-            img_name = parts[0]
-            # Kiểm tra ảnh có tồn tại trong img_dir không
+            data_rows = data_rows[:limit]
+
+        for parts in data_rows:
+            if len(parts) <= max_idx + 1:
+                continue
+            img_name = parts[0].strip()
             img_path = os.path.join(self.img_dir, img_name)
             if not os.path.exists(img_path):
                 continue
-                
-            # Trích xuất nhãn: CelebA lưu -1 và 1 -> Ta chuyển -1 thành 0.0, 1 thành 1.0
-            raw_vals = [int(parts[idx + 1]) for idx in attr_indices]
+
+            # Trích xuất nhãn: CelebA lưu -1 và 1 -> chuyển -1 thành 0.0, 1 thành 1.0
+            raw_vals = [int(float(parts[idx + 1])) for idx in attr_indices]
             binary_vals = [1.0 if val == 1 else 0.0 for val in raw_vals]
-            
+
             self.image_names.append(img_name)
             self.labels.append(torch.tensor(binary_vals, dtype=torch.float32))
 
@@ -139,13 +168,12 @@ class CelebAAttributeDataset(Dataset):
 
         img_name = self.image_names[idx]
         img_path = os.path.join(self.img_dir, img_name)
-        
+
         # Đọc ảnh RGB
         with Image.open(img_path) as img:
             img = img.convert("RGB")
-            if self.transform is not None:
-                img_tensor = self.transform(img)
-                
+            img_tensor = self.transform(img) if self.transform is not None else transforms.ToTensor()(img)
+
         label_tensor = self.labels[idx]
         return img_tensor, label_tensor
 
@@ -165,18 +193,26 @@ def get_celeba_dataloader(
         selected_attrs=SELECTED_ATTRS,
         limit=limit
     )
+    if len(dataset) < 2:
+        raise ValueError(f"Dataset chỉ có {len(dataset)} ảnh (cần ít nhất 2 ảnh để huấn luyện BatchNorm).")
+
+    drop_last = len(dataset) >= batch_size
+    if not drop_last:
+        print(f"[CẢNH BÁO] Số mẫu ({len(dataset)}) nhỏ hơn batch_size ({batch_size}); tự động dùng 1 batch kích thước {len(dataset)}.")
+
     dataloader = DataLoader(
         dataset,
-        batch_size=batch_size,
+        batch_size=min(batch_size, len(dataset)),
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
-        drop_last=True
+        drop_last=drop_last
     )
     return dataloader
 
 
 if __name__ == "__main__":
+    ensure_utf8_stdio()
     # Test kiểm tra nhanh chức năng Dataset trên máy cá nhân
     print("--- KIỂM TRA NHANH DATASET.PY ---")
     dataloader = get_celeba_dataloader(batch_size=8, limit=16, num_workers=0)

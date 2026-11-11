@@ -98,7 +98,7 @@
                 <div>
                     <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
                         AI Face Studio
-                        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">DCGAN 64x64</span>
+                        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{{ 'cDCGAN 64x64' if meta.num_attrs > 0 else 'DCGAN 64x64' }}</span>
                     </h1>
                     <p class="text-xs text-slate-400">Đồ án Trí tuệ Nhân tạo - Nhóm DHN</p>
                 </div>
@@ -113,7 +113,7 @@
                 </div>
                 <div class="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs">
                     <span class="text-slate-400">Epoch:</span>
-                    <strong class="text-purple-400 font-bold">{{ meta.epoch }}/25</strong>
+                    <strong class="text-purple-400 font-bold">{{ meta.epoch }}{% if meta.epoch != 'N/A' %}/25{% endif %}</strong>
                 </div>
                 <div class="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs">
                     <span class="text-slate-400">Tham số:</span>
@@ -197,6 +197,21 @@
                 </div>
             </div>
 
+            {% if meta.num_attrs > 0 %}
+            <!-- Conditional Attribute Selector (cDCGAN) -->
+            <div class="glass-panel px-5 py-3.5 rounded-2xl flex flex-wrap items-center gap-4">
+                <span class="text-xs font-semibold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                    <i data-lucide="tag" class="w-4 h-4"></i> Thuộc tính (cDCGAN):
+                </span>
+                {% for attr in meta.attrs %}
+                <label class="inline-flex items-center gap-2 text-xs text-slate-200 cursor-pointer select-none bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-indigo-400/50">
+                    <input type="checkbox" class="cdcgan-attr accent-indigo-500" data-attr="{{ attr }}" {% if attr == 'Smiling' %}checked{% endif %}>
+                    <span>{{ attr }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             <!-- Gallery Grid -->
             <div id="gallery-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
                 <!-- Javascript will inject cards here -->
@@ -229,7 +244,7 @@
                         <img id="img-face-a" src="" alt="Face A" class="w-full h-full object-cover">
                     </div>
                     <div class="flex items-center gap-2 w-full">
-                        <input type="number" id="morph-seed-a" value="120" min="1" class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-center text-white focus:outline-none focus:border-indigo-500">
+                        <input type="number" id="morph-seed-a" value="120" min="1" onchange="onMorphSeedChange('a')" class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-center text-white focus:outline-none focus:border-indigo-500">
                         <button onclick="randomizeSeedA()" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300" title="Đổi seed A">
                             <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
                         </button>
@@ -274,7 +289,7 @@
                         <img id="img-face-b" src="" alt="Face B" class="w-full h-full object-cover">
                     </div>
                     <div class="flex items-center gap-2 w-full">
-                        <input type="number" id="morph-seed-b" value="350" min="1" class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-center text-white focus:outline-none focus:border-pink-500">
+                        <input type="number" id="morph-seed-b" value="350" min="1" onchange="onMorphSeedChange('b')" class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-center text-white focus:outline-none focus:border-pink-500">
                         <button onclick="randomizeSeedB()" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300" title="Đổi seed B">
                             <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
                         </button>
@@ -297,15 +312,15 @@
                     <ul class="space-y-3 text-sm text-slate-300">
                         <li class="flex items-start gap-2">
                             <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 mt-0.5 shrink-0"></i>
-                            <span><strong>Generator:</strong> Véc-tơ nhiễu $z \in \mathbb{R}^{100}$ qua 5 tầng <code>ConvTranspose2d</code> + <code>BatchNorm2d</code> + <code>ReLU</code>, đầu ra ảnh $64 \times 64 \times 3$ với kích hoạt <code>Tanh</code>.</span>
+                            <span><strong>Generator:</strong> Véc-tơ nhiễu <code>z ∈ ℝ<sup>100</sup></code> qua 5 tầng <code>ConvTranspose2d</code> + <code>BatchNorm2d</code> + <code>ReLU</code>, đầu ra ảnh <code>64 × 64 × 3</code> với kích hoạt <code>Tanh</code>.</span>
                         </li>
                         <li class="flex items-start gap-2">
                             <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 mt-0.5 shrink-0"></i>
-                            <span><strong>Discriminator:</strong> Nhận ảnh $64 \times 64 \times 3$ qua 5 tầng <code>Conv2d</code> + <code>LeakyReLU(0.2)</code>, đầu ra xác suất thật/giả với kích hoạt <code>Sigmoid</code>.</span>
+                            <span><strong>Discriminator:</strong> Nhận ảnh <code>64 × 64 × 3</code> qua 5 tầng <code>Conv2d</code> + <code>LeakyReLU(0.2)</code>, đầu ra xác suất thật/giả với kích hoạt <code>Sigmoid</code>.</span>
                         </li>
                         <li class="flex items-start gap-2">
                             <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 mt-0.5 shrink-0"></i>
-                            <span><strong>Bộ tối ưu:</strong> Adam ($\alpha = 0.0002, \beta_1 = 0.5, \beta_2 = 0.999$), ổn định cân bằng Nash Minimax.</span>
+                            <span><strong>Bộ tối ưu:</strong> Adam (<code>α = 0.0002, β₁ = 0.5, β₂ = 0.999</code>), ổn định cân bằng Nash Minimax.</span>
                         </li>
                     </ul>
                 </div>
@@ -356,6 +371,21 @@
         let currentTab = 'studio';
         let debounceTimer = null;
 
+        function getSelectedAttrs() {
+            const checkboxes = document.querySelectorAll('.cdcgan-attr');
+            if (!checkboxes.length) return null;
+            const attrs = {};
+            checkboxes.forEach(cb => { attrs[cb.dataset.attr] = cb.checked ? 1 : 0; });
+            return attrs;
+        }
+
+        function onMorphSeedChange(side) {
+            const inputId = side === 'a' ? 'morph-seed-a' : 'morph-seed-b';
+            const imgId = side === 'a' ? 'img-face-a' : 'img-face-b';
+            fetchSingleFace(document.getElementById(inputId).value, imgId);
+            onMorphSliderChange(document.getElementById('morph-alpha').value);
+        }
+
         function switchTab(tab) {
             currentTab = tab;
             ['studio', 'morph', 'report'].forEach(t => {
@@ -398,7 +428,7 @@
                 const response = await fetch('/api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ count, variance, seed, size })
+                    body: JSON.stringify({ count, variance, seed, size, attrs: getSelectedAttrs() })
                 });
                 const res = await response.json();
 
@@ -455,7 +485,7 @@
             const res = await fetch('/api/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ count: 1, variance, seed, size: 256 })
+                body: JSON.stringify({ count: 1, variance, seed, size: 256, attrs: getSelectedAttrs() })
             });
             const data = await res.json();
             if (data.success && data.images.length > 0) {
@@ -480,7 +510,7 @@
                 const res = await fetch('/api/morph', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ seed_a: seedA, seed_b: seedB, alpha, variance, size: 256 })
+                    body: JSON.stringify({ seed_a: seedA, seed_b: seedB, alpha, variance, size: 256, attrs: getSelectedAttrs() })
                 });
                 const data = await res.json();
                 if (data.success) {
@@ -516,8 +546,12 @@
                 const response = await fetch('/api/create_gif', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ seed_a: seedA, seed_b: seedB, steps: 18, variance, size: 256 })
+                    body: JSON.stringify({ seed_a: seedA, seed_b: seedB, steps: 18, variance, size: 256, attrs: getSelectedAttrs() })
                 });
+                if (!response.ok) {
+                    const errJson = await response.json().catch(() => ({}));
+                    throw new Error(errJson.error || `HTTP ${response.status}`);
+                }
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');

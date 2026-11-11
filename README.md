@@ -50,7 +50,7 @@ TTNT_NhomDHN/
    python dataset.py
 
    # Chạy thử 1 lượt train nhanh (1 epoch, 100 mẫu giả lập) để chắc chắn không có lỗi logic:
-   python train.py --epochs 1 --limit 100 --batch-size 16 --save-name generator.pth
+   python train.py --epochs 1 --limit 100 --batch-size 16 --save-name outputs/smoke_generator.pth
    ```
 
 ---

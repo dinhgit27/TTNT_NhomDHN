@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 
 from dataset import get_celeba_dataloader, SELECTED_ATTRS
 from models import build_cDCGAN, ConditionalGenerator
-from utils import generate_and_save_samples, get_preset_conditions
+from utils import ensure_utf8_stdio, generate_and_save_samples, get_preset_conditions
 
 
 def auto_detect_device() -> torch.device:
@@ -61,6 +61,7 @@ def get_training_args():
 
 def train():
     """Hàm điều khiển toàn bộ quy trình huấn luyện cDCGAN."""
+    ensure_utf8_stdio()
     args = get_training_args()
     device = auto_detect_device()
     
@@ -88,6 +89,8 @@ def train():
         limit=args.limit
     )
     total_batches = len(dataloader)
+    if total_batches == 0:
+        raise RuntimeError("DataLoader có 0 batch; kiểm tra lại dữ liệu hoặc batch_size.")
     print(f"Tổng số batch mỗi epoch: {total_batches}")
 
     # 2. Xây dựng mô hình cDCGAN
@@ -202,12 +205,17 @@ def train():
 
         # 2. Lưu file trọng số Generator (theo yêu cầu đề bài: 'generator.pth' sau mỗi epoch)
         # Lưu vào thư mục gốc để app.py load trực tiếp
+        payload = {"G": netG.state_dict(), "epoch": epoch, "args": vars(args)}
         root_model_path = args.save_name
-        torch.save(netG.state_dict(), root_model_path)
+        if os.path.dirname(root_model_path):
+            os.makedirs(os.path.dirname(root_model_path), exist_ok=True)
+        torch.save(payload, root_model_path)
+
         
         # Đồng thời lưu bản sao theo epoch trong thư mục checkpoints
         epoch_model_path = os.path.join(checkpoints_dir, f"generator_epoch_{epoch:03d}.pth")
-        torch.save(netG.state_dict(), epoch_model_path)
+        torch.save(payload, epoch_model_path)
+
         print(f"-> Đã lưu trọng số mô hình: '{root_model_path}' và '{epoch_model_path}'\n")
 
     total_training_time = time.time() - start_total_time
