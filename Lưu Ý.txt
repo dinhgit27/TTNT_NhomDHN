@@ -1,0 +1,10 @@
+LƯU Ý: Các yêu cầu khi viết  toàn văn báo cáo  đồ án môn học:
+
+Tiêu đề Tên bài viết không nên vượt quá 20 từ
+
+Báo cáo đồ án môn học phải được trình bày trên khổ A4 theo chiều dọc, với các thông số PageSetup cụ thể như sau: Top: 3 cm, Bottom: 2 cm, Left: 3,0 cm, Right: 2 cm, Header: 1cm, Footer: 1,2 cm. Nội dung bài báo gõ bằng font chữ Times New Roman, cỡ 11, không dãn hay co cỡ chữ; chế độ dãn dòng: Single, khoảng trống dòng: before: 0, after: 3pt; căn lề justified. Khoảng thụt đầu dòng của đoạn văn là 0,5 cm. Tiêu đề các phần không thụt đầu dòng. Khoảng trống dòng của tiêu đề: before 6, after 6. Hình 1 mô tả thông số định dạng dãn dòng cho văn bản nội dung bài báo và thông số cho các tiêu đề
+
+Tất cả công thức được đánh số thứ tự từ số đầu tiên (1) đến số cuối cùng (n+1).
+
+Nghiêm cấm đạo văn, sao chép từ bất kỳ nguồn nào. Sinh viên đạo văn sẽ có điểm 0.
+

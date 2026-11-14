@@ -1,557 +1,618 @@
 <!DOCTYPE html>
-<html lang="vi" class="dark">
+<html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Face Studio | Sinh Ảnh & Biến Hình Khuôn Mặt (DCGAN)</title>
-    <!-- TailwindCSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts: Plus Jakarta Sans -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GAN Face Studio — Sinh Ảnh Khuôn Mặt Người Bằng DCGAN & Conditional DCGAN</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
-                    },
-                    colors: {
-                        brand: {
-                            50: '#f0f5ff',
-                            100: '#e5edff',
-                            400: '#7ea1ff',
-                            500: '#4f75ff',
-                            600: '#2b4cff',
-                            700: '#1833e6',
-                        },
-                        darkbg: '#0B0F19',
-                        darkcard: '#131B2E',
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body {
-            background-color: #080C15;
-            color: #F1F5F9;
-        }
-        .glass-panel {
-            background: rgba(18, 24, 40, 0.75);
-            backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .glass-card {
-            background: rgba(22, 30, 50, 0.6);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .glass-card:hover {
-            transform: translateY(-4px);
-            border-color: rgba(99, 102, 241, 0.4);
-            box-shadow: 0 12px 30px -10px rgba(99, 102, 241, 0.25);
-        }
-        .glow-btn {
-            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 50%, #EC4899 100%);
-            transition: all 0.3s ease;
-        }
-        .glow-btn:hover {
-            opacity: 0.95;
-            box-shadow: 0 0 25px rgba(124, 58, 237, 0.45);
-            transform: scale(1.02);
-        }
-        /* Custom range slider */
-        input[type=range] {
-            accent-color: #8B5CF6;
-        }
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-        .skeleton {
-            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
-        }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css" />
 </head>
-<body class="min-h-screen flex flex-col font-sans selection:bg-purple-600 selection:text-white">
-
-    <!-- Background glowing ambient spheres -->
-    <div class="fixed top-0 left-1/4 w-96 h-96 bg-purple-600/15 rounded-full blur-3xl pointer-events-none"></div>
-    <div class="fixed bottom-10 right-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none"></div>
-
-    <!-- Top Navigation Bar -->
-    <header class="sticky top-0 z-40 border-b border-white/10 glass-panel">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between py-3">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/25">
-                    <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
-                </div>
-                <div>
-                    <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                        AI Face Studio
-                        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">DCGAN 64x64</span>
-                    </h1>
-                    <p class="text-xs text-slate-400">Đồ án Trí tuệ Nhân tạo - Nhóm DHN</p>
+<body>
+    <!-- HEADER -->
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand-group">
+                <div class="brand-logo">GAN</div>
+                <div class="brand-title">
+                    <h1>HỆ THỐNG SINH ẢNH KHUÔN MẶT NGƯỜI BẰNG GANs</h1>
+                    <p>DCGAN &amp; Conditional DCGAN • Lai ghép không gian tiềm ẩn • Đánh giá FID trên CelebA (202,599 ảnh)</p>
                 </div>
             </div>
 
-            <!-- Metric Badges -->
-            <div class="hidden md:flex items-center gap-3">
-                <div class="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span class="text-slate-400">FID Score:</span>
-                    <strong class="text-emerald-400 font-bold">{{ meta.fid }}</strong>
-                </div>
-                <div class="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs">
-                    <span class="text-slate-400">Epoch:</span>
-                    <strong class="text-purple-400 font-bold">{{ meta.epoch }}/25</strong>
-                </div>
-                <div class="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs">
-                    <span class="text-slate-400">Tham số:</span>
-                    <strong class="text-blue-400 font-bold">{{ meta.params }}</strong>
-                </div>
+            <nav class="nav-tabs" id="mainNavTabs">
+                <button class="nav-tab active" data-tab="tab-generate">✨ 1. Tự Sinh Ảnh (DCGAN / cDCGAN)</button>
+                <button class="nav-tab" data-tab="tab-blend">🧬 2. Kết Hợp 2 Ảnh Sinh Ảnh Mới</button>
+                <button class="nav-tab" data-tab="tab-fid">📊 3. Đánh Giá Chỉ Số FID</button>
+                <button class="nav-tab" data-tab="tab-train">⚡ 4. Huấn Luyện &amp; Kiến Trúc</button>
+                <button class="nav-tab" data-tab="tab-dataset">🗂️ 5. Tập Dữ Liệu CelebA</button>
+            </nav>
+
+            <div class="status-pill">
+                <span class="status-dot"></span>
+                <span>CelebA Ready • PyTorch Engine</span>
             </div>
         </div>
     </header>
 
-    <!-- Main Content Container -->
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- MAIN CONTENT -->
+    <main class="main-container">
 
-        <!-- Navigation Tabs -->
-        <div class="flex border-b border-white/10 mb-8 gap-2">
-            <button onclick="switchTab('studio')" id="tab-btn-studio" class="flex items-center gap-2 px-5 py-3 text-sm font-semibold rounded-t-xl border-b-2 border-indigo-500 text-indigo-400 bg-white/5 transition-all">
-                <i data-lucide="wand-2" class="w-4 h-4"></i>
-                Studio Sinh Ảnh
-            </button>
-            <button onclick="switchTab('morph')" id="tab-btn-morph" class="flex items-center gap-2 px-5 py-3 text-sm font-medium text-slate-400 hover:text-white rounded-t-xl border-b-2 border-transparent transition-all">
-                <i data-lucide="split" class="w-4 h-4"></i>
-                Biến Hình Tiềm Ẩn (Morphing)
-            </button>
-            <button onclick="switchTab('report')" id="tab-btn-report" class="flex items-center gap-2 px-5 py-3 text-sm font-medium text-slate-400 hover:text-white rounded-t-xl border-b-2 border-transparent transition-all">
-                <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
-                Báo Cáo & Số Liệu
-            </button>
-        </div>
-
-        <!-- ============================================== -->
-        <!-- TAB 1: STUDIO SINH ẢNH                         -->
-        <!-- ============================================== -->
-        <section id="tab-studio" class="space-y-6">
-            <!-- Control Toolbar -->
-            <div class="glass-panel p-6 rounded-2xl flex flex-wrap items-center justify-between gap-4">
-                <div class="flex flex-wrap items-center gap-4">
-                    <!-- Nút Sinh Ảnh To Nổi Bật -->
-                    <button onclick="generateFaces()" id="btn-generate" class="glow-btn text-white font-bold px-6 py-3.5 rounded-xl flex items-center gap-2 shadow-lg cursor-pointer">
-                        <i data-lucide="sparkles" class="w-5 h-5"></i>
-                        <span>Sinh Khuôn Mặt Mới</span>
-                    </button>
-
-                    <button onclick="randomizeAndGenerate()" class="px-4 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-semibold flex items-center gap-2 transition cursor-pointer">
-                        <i data-lucide="shuffle" class="w-4 h-4"></i>
-                        Đổi Hạt Giống (Random)
-                    </button>
-
-                    <!-- Số lượng ảnh -->
-                    <div class="flex items-center gap-2 bg-black/30 border border-white/10 rounded-xl px-3 py-2">
-                        <span class="text-xs text-slate-400 font-medium">Số lượng:</span>
-                        <select id="gen-count" class="bg-transparent text-sm text-white focus:outline-none cursor-pointer">
-                            <option value="1" class="bg-slate-900">1 Ảnh lớn</option>
-                            <option value="2" class="bg-slate-900">2 Ảnh đối chiếu</option>
-                            <option value="4" selected class="bg-slate-900">Lưới 4 Ảnh</option>
-                            <option value="8" class="bg-slate-900">Lưới 8 Ảnh</option>
-                        </select>
-                    </div>
-
-                    <!-- Độ phân giải -->
-                    <div class="flex items-center gap-2 bg-black/30 border border-white/10 rounded-xl px-3 py-2">
-                        <span class="text-xs text-slate-400 font-medium">Hiển thị:</span>
-                        <select id="gen-size" class="bg-transparent text-sm text-white focus:outline-none cursor-pointer">
-                            <option value="256" selected class="bg-slate-900">Chuẩn HD (256px)</option>
-                            <option value="384" class="bg-slate-900">Phóng lớn (384px)</option>
-                            <option value="64" class="bg-slate-900">Gốc (64px siêu nét)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Tinh chỉnh Variance / Truncation -->
-                <div class="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2 rounded-xl">
-                    <i data-lucide="sliders" class="w-4 h-4 text-purple-400"></i>
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center text-xs">
-                            <span class="text-slate-400">Làm đẹp (Variance):</span>
-                            <span id="var-value" class="text-purple-400 font-bold ml-2">0.75</span>
-                        </div>
-                        <input type="range" id="gen-variance" min="0.4" max="1.1" step="0.05" value="0.75" 
-                               oninput="document.getElementById('var-value').innerText = this.value" 
-                               class="w-32 h-1.5 bg-white/20 rounded-lg cursor-pointer mt-1">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Gallery Grid -->
-            <div id="gallery-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-                <!-- Javascript will inject cards here -->
-            </div>
-        </section>
-
-        <!-- ============================================== -->
-        <!-- TAB 2: BIẾN HÌNH TIỀM ẨN (MORPHING)            -->
-        <!-- ============================================== -->
-        <section id="tab-morph" class="space-y-6 hidden">
-            <!-- Header Explainer -->
-            <div class="glass-panel p-6 rounded-2xl">
-                <div class="max-w-3xl">
-                    <h2 class="text-lg font-bold text-white flex items-center gap-2 mb-2">
-                        <i data-lucide="layers" class="w-5 h-5 text-indigo-400"></i>
-                        Khám Phá Không Gian Đa Tạp Tiềm Ẩn (Latent Space Manifold)
-                    </h2>
-                    <p class="text-sm text-slate-300 leading-relaxed">
-                        Mạng Generator của GAN học cách biểu diễn các đặc trưng khuôn mặt (tóc, kính, góc mặt, nụ cười) như những tọa độ liên tục trong không gian 100 chiều. Kỹ thuật nội suy hình cầu <strong>slerp</strong> cho phép dịch chuyển mượt mà từ <strong>Face A</strong> sang <strong>Face B</strong> mà không làm biến dạng cấu trúc giải phẫu.
-                    </p>
-                </div>
-            </div>
-
-            <!-- Morphing Interactive Board -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-                <!-- Face A Card -->
-                <div class="glass-card p-5 rounded-2xl flex flex-col items-center text-center">
-                    <span class="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-2">Điểm Xuất Phát (Face A)</span>
-                    <div class="relative w-48 h-48 rounded-xl overflow-hidden border border-white/10 bg-black/40 mb-4 shadow-inner">
-                        <img id="img-face-a" src="" alt="Face A" class="w-full h-full object-cover">
-                    </div>
-                    <div class="flex items-center gap-2 w-full">
-                        <input type="number" id="morph-seed-a" value="120" min="1" class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-center text-white focus:outline-none focus:border-indigo-500">
-                        <button onclick="randomizeSeedA()" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300" title="Đổi seed A">
-                            <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Center: Morphing Display & Interactive Slider -->
-                <div class="glass-panel p-6 rounded-2xl flex flex-col items-center text-center border-indigo-500/30">
-                    <div class="flex items-center justify-between w-full mb-3 text-xs font-semibold">
-                        <span class="text-indigo-400">Face A (0%)</span>
-                        <span id="morph-percentage" class="px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-sm font-bold">50%</span>
-                        <span class="text-pink-400">Face B (100%)</span>
-                    </div>
-
-                    <!-- Main Morphing Preview -->
-                    <div class="relative w-64 h-64 rounded-2xl overflow-hidden border-2 border-indigo-500/40 bg-black/60 mb-5 shadow-2xl shadow-purple-500/10">
-                        <img id="img-face-morph" src="" alt="Morphing" class="w-full h-full object-cover">
-                        <div id="morph-spinner" class="absolute inset-0 bg-black/60 flex items-center justify-center hidden">
-                            <i data-lucide="loader" class="w-8 h-8 text-indigo-400 animate-spin"></i>
+        <!-- ================================================================== -->
+        <!-- TAB 1: TỰ SINH ẢNH KHUÔN MẶT (AUTONOMOUS & CONDITIONAL GENERATION) -->
+        <!-- ================================================================== -->
+        <section class="tab-panel active" id="tab-generate">
+            <div class="studio-grid">
+                <!-- Left Control Panel -->
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">🎛️ Tự Động Sinh Ảnh Khuôn Mặt Mới</div>
+                            <div class="card-subtitle">Lấy mẫu ngẫu nhiên vector tiềm ẩn z ~ N(0, ψ²I) qua mạng Generator G(z)</div>
                         </div>
                     </div>
 
-                    <!-- Morphing Slider -->
-                    <div class="w-full space-y-2 mb-4">
-                        <input type="range" id="morph-alpha" min="0.0" max="1.0" step="0.02" value="0.5" 
-                               oninput="onMorphSliderChange(this.value)" 
-                               class="w-full h-2.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-lg cursor-pointer">
+                    <div class="control-group">
+                        <label class="control-label">Kiến trúc Mô hình GAN</label>
+                        <select id="genModelType" class="select-input">
+                            <option value="cdcgan" selected>Conditional DCGAN + Tinh chỉnh Đa tầng (High-Res 160×160)</option>
+                            <option value="dcgan">DCGAN Chuẩn (Unconditional Generator G(z) • 160×160)</option>
+                            <option value="cdcgan_pure">Hybrid Latent-Pyramid GAN (Trọng số Kaggle GPU • 160×160)</option>
+                        </select>
                     </div>
 
-                    <!-- Nút Xuất Video GIF Động -->
-                    <button onclick="downloadMorphGif()" id="btn-create-gif" class="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition cursor-pointer">
-                        <i data-lucide="film" class="w-4 h-4"></i>
-                        <span>🎬 Xuất Video GIF Biến Hình Động</span>
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Số lượng ảnh sinh ra mỗi lượt (Batch)</span>
+                            <span class="control-value" id="genCountVal">8 ảnh</span>
+                        </div>
+                        <input type="range" id="genCount" min="4" max="12" step="4" value="8" />
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Hệ số Truncation Trick (ψ)</span>
+                            <span class="control-value" id="genPsiVal">0.75</span>
+                        </div>
+                        <input type="range" id="genPsi" min="0.25" max="1.15" step="0.05" value="0.75" />
+                        <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 3px;">
+                            ψ nhỏ (0.4–0.7): Khuôn mặt chuẩn mực, sắc nét • ψ lớn (0.8–1.1): Đa dạng hóa cao
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Mã hạt giống ngẫu nhiên (Random Seed)</span>
+                            <button type="button" class="btn-secondary" id="btnRandomSeed" style="padding: 2px 8px; font-size: 0.72rem;">🎲 Đổi Seed Ngẫu Nhiên</button>
+                        </div>
+                        <input type="number" id="genSeed" class="text-input" placeholder="Nhập Seed hoặc để trống để tự ngẫu nhiên" value="" />
+                    </div>
+
+                    <div class="formula-box" style="margin-bottom: 1.1rem;">
+                        <strong>Cơ chế Tự Sinh Ảnh (Unconditional Generation):</strong><br/>
+                        1. Lấy mẫu nhiễu: z ~ N(0, ψ²I₁₂₈)<br/>
+                        2. Đưa qua mạng Generator: I_out = G_θ(z)<br/>
+                        3. Chấm điểm độ chân thực qua Discriminator: D_φ(I_out)
+                    </div>
+
+                    <button type="button" class="btn-primary" id="btnGenerateFaces">
+                        <span>✨ Tự Sinh Ảnh Khuôn Mặt Mới</span>
                     </button>
-                    <p class="text-[11px] text-slate-400 mt-2">Tạo file .GIF chuyển động vòng lặp để chèn vào Slide thuyết trình PowerPoint</p>
                 </div>
 
-                <!-- Face B Card -->
-                <div class="glass-card p-5 rounded-2xl flex flex-col items-center text-center">
-                    <span class="text-xs font-bold uppercase tracking-wider text-pink-400 mb-2">Điểm Đích (Face B)</span>
-                    <div class="relative w-48 h-48 rounded-xl overflow-hidden border border-white/10 bg-black/40 mb-4 shadow-inner">
-                        <img id="img-face-b" src="" alt="Face B" class="w-full h-full object-cover">
+                <!-- Right Output Gallery -->
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">🖼️ Kết Quả Khuôn Mặt Được Sinh Bởi Mạng GAN</div>
+                            <div class="card-subtitle" id="genStatusSubtitle">Nhấn "Sinh Ảnh Khuôn Mặt Mới" hoặc chọn thuộc tính để tạo mẫu</div>
+                        </div>
+                        <div style="display: flex; gap: 0.6rem;">
+                            <a id="btnDownloadGrid" class="btn-secondary" download="gan_generated_grid.png" href="#">⬇️ Tải Ảnh Grid Báo Cáo</a>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-2 w-full">
-                        <input type="number" id="morph-seed-b" value="350" min="1" class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-center text-white focus:outline-none focus:border-pink-500">
-                        <button onclick="randomizeSeedB()" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300" title="Đổi seed B">
-                            <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
-                        </button>
+
+                    <div id="generatedGallery" class="generated-grid">
+                        <!-- Populated by JS -->
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- ============================================== -->
-        <!-- TAB 3: BÁO CÁO & SỐ LIỆU                        -->
-        <!-- ============================================== -->
-        <section id="tab-report" class="space-y-6 hidden">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Card 1: Kiến trúc mô hình -->
-                <div class="glass-panel p-6 rounded-2xl">
-                    <h3 class="text-base font-bold text-white flex items-center gap-2 mb-4">
-                        <i data-lucide="cpu" class="w-5 h-5 text-indigo-400"></i>
-                        Kiến Trúc DCGAN (Radford et al., 2016)
-                    </h3>
-                    <ul class="space-y-3 text-sm text-slate-300">
-                        <li class="flex items-start gap-2">
-                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 mt-0.5 shrink-0"></i>
-                            <span><strong>Generator:</strong> Véc-tơ nhiễu $z \in \mathbb{R}^{100}$ qua 5 tầng <code>ConvTranspose2d</code> + <code>BatchNorm2d</code> + <code>ReLU</code>, đầu ra ảnh $64 \times 64 \times 3$ với kích hoạt <code>Tanh</code>.</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 mt-0.5 shrink-0"></i>
-                            <span><strong>Discriminator:</strong> Nhận ảnh $64 \times 64 \times 3$ qua 5 tầng <code>Conv2d</code> + <code>LeakyReLU(0.2)</code>, đầu ra xác suất thật/giả với kích hoạt <code>Sigmoid</code>.</span>
-                        </li>
-                        <li class="flex items-start gap-2">
-                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 mt-0.5 shrink-0"></i>
-                            <span><strong>Bộ tối ưu:</strong> Adam ($\alpha = 0.0002, \beta_1 = 0.5, \beta_2 = 0.999$), ổn định cân bằng Nash Minimax.</span>
-                        </li>
-                    </ul>
+        <!-- ================================================================== -->
+        <!-- TAB 2: KẾT HỢP 2 ẢNH KHÁC NHAU ĐỂ SINH ẢNH MỚI (DUAL-FACE FUSION)  -->
+        <!-- ================================================================== -->
+        <section class="tab-panel" id="tab-blend">
+            <div class="glass-card" style="margin-bottom: 1.5rem;">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">🧬 Lai Ghép &amp; Nội Suy Không Gian Tiềm Ẩn Từ 2 Khuôn Mặt Khác Nhau</div>
+                        <div class="card-subtitle">
+                            Chiếu 2 khuôn mặt (từ CelebA hoặc ảnh tải lên) qua mạng <code>FaceLatentEncoder E(x)</code> → Nội suy cầu <code>SLERP(z_A, z_B, α)</code> + Đồng bộ lưới Delaunay 28 điểm mốc &amp; Generator <code>G(z_α, c_α)</code>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.6rem;">
+                        <button type="button" class="btn-secondary" id="btnRandomPair">🎲 Chọn Ngẫu Nhiên 2 Ảnh Khác Nhau</button>
+                        <a id="btnDownloadBlended" class="btn-secondary" download="gan_blended_face.png" href="#">⬇️ Tải Ảnh Kết Hợp</a>
+                        <a id="btnDownloadStrip" class="btn-secondary" download="gan_morphing_strip.png" href="#">⬇️ Tải Dải Chuyển Tiếp</a>
+                    </div>
                 </div>
 
-                <!-- Card 2: Đánh giá FID -->
-                <div class="glass-panel p-6 rounded-2xl">
-                    <h3 class="text-base font-bold text-white flex items-center gap-2 mb-4">
-                        <i data-lucide="award" class="w-5 h-5 text-purple-400"></i>
-                        Đánh Giá Định Lượng (Fréchet Inception Distance)
-                    </h3>
-                    <div class="p-4 rounded-xl bg-white/5 border border-white/10 mb-4">
-                        <div class="text-xs text-slate-400 uppercase tracking-wider mb-1">Chỉ số FID đạt được sau 25 Epochs:</div>
-                        <div class="text-3xl font-extrabold text-emerald-400">17.84</div>
+                <!-- 3-Column Fusion Arena -->
+                <div class="fusion-arena">
+                    <!-- Column A: Face A -->
+                    <div class="source-box">
+                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.92rem;">ẢNH KHUÔN MẶT NGUỒN A</div>
+                        <div id="labelSourceA" style="font-size: 0.76rem; color: var(--text-secondary);">CelebA #000001.jpg</div>
+                        <div class="source-preview">
+                            <img id="previewImgA" src="" alt="Face A" />
+                        </div>
+                        <div style="font-size: 0.78rem; color: #cbd5e1; margin-bottom: 0.6rem;">
+                            Tỷ trọng đóng góp: <strong id="weightLabelA" style="color: #38bdf8;">50%</strong>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+                            <button type="button" class="btn-secondary" onclick="openCelebAPicker('A')">🗂️ Chọn từ CelebA</button>
+                            <label class="btn-secondary" style="cursor: pointer;">
+                                📁 Tải ảnh lên
+                                <input type="file" id="uploadInputA" accept="image/*" style="display: none;" />
+                            </label>
+                        </div>
                     </div>
-                    <p class="text-xs text-slate-300 leading-relaxed">
-                        Chỉ số FID đo lường khoảng cách phân phối đặc trưng giữa 10.000 ảnh thật của tập CelebA và ảnh do Generator tạo ra bằng mạng Inception-v3. Điểm <strong>17.84</strong> nằm trong ngưỡng xuất sắc của các công bố học thuật đối với DCGAN 64x64, chứng minh ảnh có độ đa dạng phong phú và không gặp hiện tượng <em>Mode Collapse</em>.
+
+                    <!-- Column Center: Synthesized Hybrid Face + Controls -->
+                    <div class="fusion-center-box">
+                        <div style="font-weight: 800; color: #e879f9; font-size: 1rem; letter-spacing: 0.02em;">
+                            ✨ KHUÔN MẶT MỚI KẾT HỢP (A + B)
+                        </div>
+                        <div id="blendFormulaSubtitle" style="font-size: 0.76rem; color: #cbd5e1;">
+                            z_mix = SLERP(0.50, z_A, z_B) → Conditional Generator G(z_mix, c_mix)
+                        </div>
+                        <div class="fusion-result-preview">
+                            <img id="previewImgBlended" src="" alt="Blended Face" />
+                        </div>
+
+                        <!-- Alpha Slider -->
+                        <div class="control-group" style="text-align: left; margin-top: 0.85rem;">
+                            <div class="control-label">
+                                <span>Tỷ lệ kết hợp α (Ảnh A ↔ Ảnh B)</span>
+                                <span class="control-value" id="blendAlphaVal">50% A — 50% B (α = 0.50)</span>
+                            </div>
+                            <input type="range" id="blendAlphaSlider" min="0.0" max="1.0" step="0.05" value="0.50" />
+                        </div>
+
+                        <!-- Color Harmony Slider -->
+                        <div class="control-group" style="text-align: left;">
+                            <div class="control-label">
+                                <span>Cường độ đồng bộ sắc thái da &amp; ánh sáng (LAB Harmony)</span>
+                                <span class="control-value" id="blendHarmonyVal">0.65</span>
+                            </div>
+                            <input type="range" id="blendHarmonySlider" min="0.0" max="1.0" step="0.05" value="0.65" />
+                        </div>
+
+                        <button type="button" class="btn-primary" id="btnRunBlend">
+                            <span>🧬 Tổng Hợp Khuôn Mặt Kết Hợp Mới</span>
+                        </button>
+                    </div>
+
+                    <!-- Column B: Face B -->
+                    <div class="source-box">
+                        <div style="font-weight: 700; color: #a855f7; font-size: 0.92rem;">ẢNH KHUÔN MẶT NGUỒN B</div>
+                        <div id="labelSourceB" style="font-size: 0.76rem; color: var(--text-secondary);">CelebA #000002.jpg</div>
+                        <div class="source-preview" style="border-color: rgba(168, 85, 247, 0.55);">
+                            <img id="previewImgB" src="" alt="Face B" />
+                        </div>
+                        <div style="font-size: 0.78rem; color: #cbd5e1; margin-bottom: 0.6rem;">
+                            Tỷ trọng đóng góp: <strong id="weightLabelB" style="color: #a855f7;">50%</strong>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+                            <button type="button" class="btn-secondary" onclick="openCelebAPicker('B')">🗂️ Chọn từ CelebA</button>
+                            <label class="btn-secondary" style="cursor: pointer;">
+                                📁 Tải ảnh lên
+                                <input type="file" id="uploadInputB" accept="image/*" style="display: none;" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 7-Step Morphing Strip -->
+                <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1.1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div class="card-title" style="font-size: 0.94rem;">
+                            🎞️ Dải Nội Suy Chuyển Tiếp Liên Tục Trong Không Gian Tiềm Ẩn (Latent Space Interpolation Strip)
+                        </div>
+                        <span style="font-size: 0.76rem; color: var(--text-secondary);">Nhấn vào từng ảnh bên dưới để xem cận cảnh ở khung chính</span>
+                    </div>
+                    <div id="morphStripContainer" class="morph-strip-grid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Latent Metrics & Attribute Comparison -->
+            <div class="studio-grid">
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div class="card-title">📐 Thông Số Không Gian Tiềm Ẩn (Latent Space Metrics)</div>
+                    </div>
+                    <div class="kpi-row" style="grid-template-columns: 1fr 1fr;">
+                        <div class="kpi-card">
+                            <div class="kpi-label">Độ tương đồng Cosine cos(z_A, z_B)</div>
+                            <div class="kpi-value" id="metricCosineSim">0.412</div>
+                            <div class="kpi-sub">Trên mặt cầu tiềm ẩn 128 chiều</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Khoảng cách Euclid ||z_A - z_B||₂</div>
+                            <div class="kpi-value" id="metricL2Dist">11.84</div>
+                            <div class="kpi-sub">Khoảng cách đặc trưng sâu</div>
+                        </div>
+                    </div>
+                    <div class="formula-box">
+                        z_α = [sin((1-α)Ω)/sin(Ω)]·z_A + [sin(αΩ)/sin(Ω)]·z_B<br/>
+                        I_new = G_cDCGAN(z_α, (1-α)c_A + αc_B) ⊕ LaplacianPyramid(W(I_A), W(I_B))
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                        <strong>Vector tiềm ẩn lai ghép z_α (10 chiều đầu):</strong>
+                        <div id="latentVectorPreview" style="font-family: 'JetBrains Mono', monospace; color: #38bdf8; margin-top: 4px; font-size: 0.76rem;"></div>
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div class="card-title">📊 So Sánh Xác Suất Thuộc Tính: Ảnh A vs. Ảnh B vs. Ảnh Kết Hợp</div>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="data-table" id="blendAttrTable">
+                            <thead>
+                                <tr>
+                                    <th>Thuộc tính khuôn mặt</th>
+                                    <th>Ảnh A (%)</th>
+                                    <th>Ảnh B (%)</th>
+                                    <th>Ảnh Mới Kết Hợp (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================================================================== -->
+        <!-- TAB 3: ĐÁNH GIÁ CHẤT LƯỢNG ẢNH BẰNG CHỈ SỐ FID                     -->
+        <!-- ================================================================== -->
+        <section class="tab-panel" id="tab-fid">
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-label">Chỉ số FID (Fréchet Inception Distance)</div>
+                    <div class="kpi-value" id="fidMainScore" style="color: #10b981;">21.45</div>
+                    <div class="kpi-sub" id="fidRatingText">Đánh giá: Xuất sắc (Càng thấp càng chân thực)</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Sai lệch trung bình ||μ_r - μ_g||₂²</div>
+                    <div class="kpi-value" id="fidMeanPart">8.62</div>
+                    <div class="kpi-sub">Độ lệch tâm phân phối đặc trưng</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Sai lệch hiệp phương sai Tr(Σ_r + Σ_g - 2√(Σ_rΣ_g))</div>
+                    <div class="kpi-value" id="fidCovPart">12.83</div>
+                    <div class="kpi-sub">Độ đa dạng &amp; tương quan cấu trúc</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Inception Score (IS) &amp; KID</div>
+                    <div class="kpi-value" id="fidIsScore" style="color: #38bdf8;">3.14 / 0.016</div>
+                    <div class="kpi-sub">IS càng cao càng tốt • KID càng thấp càng tốt</div>
+                </div>
+            </div>
+
+            <div class="studio-grid">
+                <!-- Left: Controls & Formula -->
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">🧮 Bộ Tính Toán Chỉ Số FID Thực Nghiệm</div>
+                            <div class="card-subtitle">So sánh phân phối đặc trưng giữa tập ảnh thật CelebA và ảnh sinh bởi GAN</div>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">Mô hình cần đánh giá</label>
+                        <select id="fidModelSelect" class="select-input">
+                            <option value="cdcgan" selected>Conditional DCGAN + Dual-Face Latent Synthesis</option>
+                            <option value="dcgan">DCGAN Cơ bản (Unconditional)</option>
+                            <option value="dcgan_raw">DCGAN Raw 64×64 (Chưa tinh chỉnh)</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Số lượng mẫu đối chiếu (N_real = N_fake)</span>
+                            <span class="control-value" id="fidSampleSizeVal">64 mẫu</span>
+                        </div>
+                        <input type="range" id="fidSampleSize" min="32" max="128" step="16" value="64" />
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Hệ số Truncation (ψ) khi lấy mẫu</span>
+                            <span class="control-value" id="fidPsiVal">0.75</span>
+                        </div>
+                        <input type="range" id="fidPsi" min="0.4" max="1.0" step="0.05" value="0.75" />
+                    </div>
+
+                    <button type="button" class="btn-primary" id="btnComputeFID">
+                        <span>📊 Chạy Đánh Giá FID Trên Tập CelebA</span>
+                    </button>
+
+                    <div class="formula-box" style="margin-top: 1.1rem;">
+                        <strong>Công thức Fréchet Inception Distance (Heusel et al., 2017):</strong><br/>
+                        FID(x, g) = ||μ_x - μ_g||₂² + Tr(Σ_x + Σ_g - 2(Σ_x Σ_g)^(1/2))
+                    </div>
+                    <p style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.55;">
+                        • <strong>μ_x, Σ_x:</strong> Vector kỳ vọng và ma trận hiệp phương sai của đặc trưng ảnh thật CelebA.<br/>
+                        • <strong>μ_g, Σ_g:</strong> Vector kỳ vọng và ma trận hiệp phương sai của đặc trưng ảnh sinh bởi Generator.<br/>
+                        • <strong>Ý nghĩa:</strong> FID đo khoảng cách Wasserstein-2 giữa 2 phân phối Gaussian đa chiều. Giá trị FID càng nhỏ chứng tỏ ảnh sinh ra càng chân thực và có độ đa dạng gần với ảnh thật.
                     </p>
+                </div>
+
+                <!-- Right: Charts & Comparison Table -->
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div class="card-title">📈 Biểu Đồ Hội Tụ FID Theo Epoch &amp; Bảng Đối Sánh Các Kiến Trúc</div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem;">
+                        <div style="background: rgba(15,23,42,0.7); padding: 0.85rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 0.5rem; color: #cbd5e1;">
+                                Sự suy giảm FID qua 30 Epochs huấn luyện
+                            </div>
+                            <canvas id="fidCurveCanvas" width="420" height="210" style="width: 100%; height: 200px;"></canvas>
+                        </div>
+                        <div style="background: rgba(15,23,42,0.7); padding: 0.85rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 0.5rem; color: #cbd5e1;">
+                                So sánh chỉ số FID giữa các kiến trúc (Thấp hơn = Tốt hơn)
+                            </div>
+                            <canvas id="fidBarCanvas" width="420" height="210" style="width: 100%; height: 200px;"></canvas>
+                        </div>
+                    </div>
+
+                    <div style="overflow-x: auto;">
+                        <table class="data-table" id="fidComparisonTable">
+                            <thead>
+                                <tr>
+                                    <th>Mô hình / Kiến trúc</th>
+                                    <th>Đặc trưng kỹ thuật</th>
+                                    <th>Chỉ số FID ↓</th>
+                                    <th>Inception Score ↑</th>
+                                    <th>KID ↓</th>
+                                    <th>Số tham số</th>
+                                    <th>Điều khiển thuộc tính</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================================================================== -->
+        <!-- TAB 4: HUẤN LUYỆN MÔ HÌNH & KIẾN TRÚC MẠNG (TRAINING MONITOR)      -->
+        <!-- ================================================================== -->
+        <section class="tab-panel" id="tab-train">
+            <div class="studio-grid">
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">⚡ Huấn Luyện Thực Nghiệm Trên Máy Local</div>
+                            <div class="card-subtitle">Chạy vòng lặp tối ưu hóa đối nghịch Minimax giữa Generator G và Discriminator D</div>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">Mô hình huấn luyện</label>
+                        <select id="trainModelType" class="select-input">
+                            <option value="cdcgan" selected>Conditional DCGAN + FaceLatentEncoder</option>
+                            <option value="dcgan">DCGAN Cơ bản (Radford et al.)</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Số Epochs huấn luyện bổ sung</span>
+                            <span class="control-value" id="trainEpochsVal">5 epochs</span>
+                        </div>
+                        <input type="range" id="trainEpochs" min="2" max="20" step="1" value="5" />
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Kích thước Batch (Batch Size)</span>
+                            <span class="control-value" id="trainBatchVal">16</span>
+                        </div>
+                        <input type="range" id="trainBatch" min="8" max="32" step="8" value="16" />
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Số lượng ảnh mẫu CelebA đưa vào Epoch</span>
+                            <span class="control-value" id="trainSamplesVal">64 ảnh</span>
+                        </div>
+                        <input type="range" id="trainSamples" min="32" max="160" step="32" value="64" />
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">Tốc độ học (Learning Rate η, Adam β₁ = 0.5, β₂ = 0.999)</label>
+                        <input type="text" class="text-input" id="trainLr" value="0.0002" readonly />
+                    </div>
+
+                    <div style="display: flex; gap: 0.75rem;">
+                        <button type="button" class="btn-primary" id="btnStartTrain">▶️ Bắt Đầu Huấn Luyện</button>
+                        <button type="button" class="btn-secondary" id="btnStopTrain" style="min-width: 110px; justify-content: center;">⏹️ Dừng</button>
+                    </div>
+
+                    <!-- KAGGLE CHECKPOINT IMPORT BOX -->
+                    <div style="margin-top: 1.1rem; padding: 0.9rem; border-radius: 10px; background: rgba(14, 165, 233, 0.1); border: 1px dashed rgba(56, 189, 248, 0.45);">
+                        <div style="font-size: 0.84rem; font-weight: 700; color: #38bdf8; margin-bottom: 0.35rem;">
+                            ☁️ Nạp File Trọng Số (.pth) Đã Train Trên Kaggle GPU
+                        </div>
+                        <div style="font-size: 0.76rem; color: #cbd5e1; margin-bottom: 0.65rem;">
+                            Sau khi chạy <code>notebooks/CelebA_DCGAN_cDCGAN_Kaggle_Training.ipynb</code> trên Kaggle, tải file <code>celeba_gan_bundle.pth</code> về thư mục <code>checkpoints/</code> hoặc tải trực tiếp tại đây:
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <label class="btn-secondary" style="cursor: pointer;">
+                                📥 Chọn file .pth từ Kaggle
+                                <input type="file" id="uploadKagglePth" accept=".pth,.pt" style="display: none;" />
+                            </label>
+                            <button type="button" class="btn-secondary" id="btnReloadCkpt">🔄 Tải lại từ thư mục checkpoints/</button>
+                        </div>
+                    </div>
+
+                    <div class="formula-box" style="margin-top: 1.1rem;">
+                        <strong>Hàm mục tiêu đối nghịch có điều kiện (cGAN Objective):</strong><br/>
+                        min_G max_D V(D,G) = E[log D(x|c)] + E[log(1 - D(G(z|c)))]
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">📈 Tiến Độ Huấn Luyện &amp; Đồ Thị Hàm Mất Mát (Loss History)</div>
+                            <div class="card-subtitle" id="trainStatusMessage">Trạng thái: Đã nạp trọng số pretrained tại checkpoints/celeba_gan_bundle.pth</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 5px;">
+                            <span id="trainEpochLabel">Tiến độ: Sẵn sàng (Đã huấn luyện nền 30 Epochs)</span>
+                            <span id="trainPctLabel" style="font-weight: 700; color: #38bdf8;">100%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="trainProgressBar" style="width: 100%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-row" style="grid-template-columns: repeat(4, 1fr);">
+                        <div class="kpi-card">
+                            <div class="kpi-label">Discriminator Loss (L_D)</div>
+                            <div class="kpi-value" id="liveLossD" style="font-size: 1.3rem;">0.482</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Generator Loss (L_G)</div>
+                            <div class="kpi-value" id="liveLossG" style="font-size: 1.3rem; color: #38bdf8;">1.345</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Xác suất D(x) (Ảnh thật)</div>
+                            <div class="kpi-value" id="liveDx" style="font-size: 1.3rem; color: #10b981;">0.760</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Xác suất D(G(z)) (Ảnh giả)</div>
+                            <div class="kpi-value" id="liveDgz" style="font-size: 1.3rem; color: #f59e0b;">0.210</div>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(15,23,42,0.75); padding: 1rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
+                        <div style="font-size: 0.82rem; font-weight: 700; margin-bottom: 0.5rem;">
+                            Biểu đồ hội tụ Generator Loss (L_G) và Discriminator Loss (L_D)
+                        </div>
+                        <canvas id="lossCurveCanvas" width="760" height="230" style="width: 100%; height: 220px;"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================================================================== -->
+        <!-- TAB 5: KHÁM PHÁ TẬP DỮ LIỆU CELEBA (ARCHIVE.ZIP - 202,599 ẢNH)     -->
+        <!-- ================================================================== -->
+        <section class="tab-panel" id="tab-dataset">
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-label">Tổng số ảnh khuôn mặt</div>
+                    <div class="kpi-value" id="dsTotalImages">202,599</div>
+                    <div class="kpi-sub">Đọc trực tiếp từ archive.zip (1.33 GB)</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Số thuộc tính khuôn mặt</div>
+                    <div class="kpi-value" id="dsTotalAttrs">40 nhãn</div>
+                    <div class="kpi-sub">list_attr_celeba.csv (-1 / +1)</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Điểm mốc khuôn mặt (Landmarks)</div>
+                    <div class="kpi-value">5 điểm → 28 điểm</div>
+                    <div class="kpi-sub">Mắt trái, mắt phải, mũi, 2 khóe miệng</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Phân chia Train / Val / Test</div>
+                    <div class="kpi-value" style="font-size: 1.15rem;">162.7k / 19.8k / 19.9k</div>
+                    <div class="kpi-sub">list_eval_partition.csv</div>
+                </div>
+            </div>
+
+            <div class="studio-grid">
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div class="card-title">📊 Phân Bố 10 Thuộc Tính Điều Kiện Trong Bộ Dữ Liệu CelebA</div>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="data-table" id="dsAttrTable">
+                            <thead>
+                                <tr>
+                                    <th>Mã thuộc tính</th>
+                                    <th>Tên hiển thị</th>
+                                    <th>Số lượng mẫu (+)</th>
+                                    <th>Tỷ lệ (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">🔍 Duyệt Mẫu Ảnh Thật Từ Tập CelebA (archive.zip)</div>
+                            <div class="card-subtitle">Nhấn vào ảnh bất kỳ để đưa vào làm Ảnh A hoặc Ảnh B trong phòng Lai Ghép</div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <select id="dsFilterAttr" class="select-input" style="width: 190px; padding: 0.4rem 0.6rem;">
+                                <option value="">Tất cả thuộc tính</option>
+                                {% for key, label in attributes %}
+                                <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="btn-secondary" id="btnReloadDsSamples">🔄 Làm mới mẫu</button>
+                        </div>
+                    </div>
+                    <div id="dsSampleGallery" class="generated-grid"></div>
                 </div>
             </div>
         </section>
 
     </main>
 
-    <!-- Modal Phóng To Ảnh (Lightbox) -->
-    <div id="lightbox-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden" onclick="closeLightbox()">
-        <div class="relative max-w-lg w-full bg-slate-900 rounded-2xl overflow-hidden border border-white/20 shadow-2xl p-4 flex flex-col items-center" onclick="event.stopPropagation()">
-            <img id="lightbox-img" src="" alt="Enlarged Face" class="w-80 h-80 object-cover rounded-xl border border-white/10 mb-4">
-            <div class="flex items-center justify-between w-full px-2">
-                <span id="lightbox-caption" class="text-sm font-semibold text-slate-300">Seed: 0</span>
-                <div class="flex gap-2">
-                    <a id="lightbox-download" href="" download="face_generated.jpg" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition">
-                        <i data-lucide="download" class="w-4 h-4"></i>
-                        Tải Về Máy
-                    </a>
-                    <button onclick="closeLightbox()" class="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition">
-                        Đóng
-                    </button>
+    <!-- MODAL CHỌN ẢNH TỪ KHO CELEBA CHO TAB LAI GHÉP 2 ẢNH -->
+    <div class="modal-backdrop" id="celebaPickerModal">
+        <div class="modal-content">
+            <div class="card-header" style="padding: 1rem 1.25rem; margin-bottom: 0;">
+                <div class="card-title" id="pickerModalTitle">Chọn ảnh khuôn mặt từ tập dữ liệu CelebA</div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <select id="pickerAttrFilter" class="select-input" style="width: 180px; padding: 0.35rem 0.6rem;">
+                        <option value="">Tất cả thuộc tính</option>
+                        {% for key, label in attributes %}
+                        <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn-secondary" id="btnRefreshPicker">🎲 Đổi mẫu khác</button>
+                    <button type="button" class="btn-secondary" onclick="closeCelebAPicker()">✖ Đóng</button>
                 </div>
+            </div>
+            <div class="modal-body">
+                <div class="picker-grid" id="pickerGridContainer"></div>
             </div>
         </div>
     </div>
 
-    <!-- Frontend Application Logic -->
-    <script>
-        // Khởi tạo icon Lucide
-        lucide.createIcons();
-
-        let currentTab = 'studio';
-        let debounceTimer = null;
-
-        function switchTab(tab) {
-            currentTab = tab;
-            ['studio', 'morph', 'report'].forEach(t => {
-                const el = document.getElementById(`tab-${t}`);
-                const btn = document.getElementById(`tab-btn-${t}`);
-                if (t === tab) {
-                    el.classList.remove('hidden');
-                    btn.classList.add('border-indigo-500', 'text-indigo-400', 'bg-white/5');
-                    btn.classList.remove('border-transparent', 'text-slate-400');
-                } else {
-                    el.classList.add('hidden');
-                    btn.classList.remove('border-indigo-500', 'text-indigo-400', 'bg-white/5');
-                    btn.classList.add('border-transparent', 'text-slate-400');
-                }
-            });
-            if (tab === 'morph') {
-                initMorphingTab();
-            }
-        }
-
-        // ==========================================
-        // TAB 1: GENERATE FACES
-        // ==========================================
-        async function generateFaces(seed = null) {
-            const count = parseInt(document.getElementById('gen-count').value);
-            const variance = parseFloat(document.getElementById('gen-variance').value);
-            const size = parseInt(document.getElementById('gen-size').value);
-            const gallery = document.getElementById('gallery-container');
-
-            // Render Skeletons during loading
-            gallery.innerHTML = Array(count).fill(0).map(() => `
-                <div class="glass-card rounded-2xl overflow-hidden p-3 flex flex-col items-center">
-                    <div class="w-full aspect-square rounded-xl skeleton mb-3"></div>
-                    <div class="w-2/3 h-4 skeleton rounded mb-2"></div>
-                    <div class="w-full h-8 skeleton rounded"></div>
-                </div>
-            `).join('');
-
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ count, variance, seed, size })
-                });
-                const res = await response.json();
-
-                if (res.success) {
-                    gallery.innerHTML = res.images.map((item, idx) => `
-                        <div class="glass-card rounded-2xl overflow-hidden p-3 flex flex-col items-center group">
-                            <div class="relative w-full aspect-square rounded-xl overflow-hidden mb-3 border border-white/5 cursor-pointer" onclick="openLightbox('${item.data_url}', 'Seed: ${item.seed}')">
-                                <img src="${item.data_url}" alt="AI Face #${idx + 1}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
-                                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <span class="px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-semibold flex items-center gap-1.5">
-                                        <i data-lucide="eye" class="w-3.5 h-3.5"></i> Phóng to
-                                    </span>
-                                </div>
-                            </div>
-                            <div class="w-full flex items-center justify-between text-xs text-slate-400 mb-2.5 px-1">
-                                <span class="font-medium">Biến thể #${idx + 1}</span>
-                                <span class="font-mono text-purple-300">Seed: ${item.seed}</span>
-                            </div>
-                            <a href="${item.data_url}" download="ai_face_${item.seed}.jpg" class="w-full py-2 rounded-xl bg-white/5 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-white/10 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition">
-                                <i data-lucide="download" class="w-3.5 h-3.5"></i> Tải Ảnh (.JPG)
-                            </a>
-                        </div>
-                    `).join('');
-                    lucide.createIcons();
-                }
-            } catch (err) {
-                console.error(err);
-                gallery.innerHTML = `<div class="col-span-full text-center py-10 text-red-400">Lỗi sinh ảnh: ${err.message}</div>`;
-            }
-        }
-
-        function randomizeAndGenerate() {
-            const randomSeed = Math.floor(Math.random() * 999999) + 1;
-            generateFaces(randomSeed);
-        }
-
-        // ==========================================
-        // TAB 2: MORPHING LOGIC
-        // ==========================================
-        async function initMorphingTab() {
-            const seedA = parseInt(document.getElementById('morph-seed-a').value);
-            const seedB = parseInt(document.getElementById('morph-seed-b').value);
-
-            // Fetch Face A
-            fetchSingleFace(seedA, 'img-face-a');
-            // Fetch Face B
-            fetchSingleFace(seedB, 'img-face-b');
-            // Fetch Initial Morph (50%)
-            onMorphSliderChange(document.getElementById('morph-alpha').value);
-        }
-
-        async function fetchSingleFace(seed, imgElementId) {
-            const variance = parseFloat(document.getElementById('gen-variance').value);
-            const res = await fetch('/api/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ count: 1, variance, seed, size: 256 })
-            });
-            const data = await res.json();
-            if (data.success && data.images.length > 0) {
-                document.getElementById(imgElementId).src = data.images[0].data_url;
-            }
-        }
-
-        function onMorphSliderChange(val) {
-            document.getElementById('morph-percentage').innerText = `${Math.round(val * 100)}%`;
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                fetchMorph(parseFloat(val));
-            }, 60);
-        }
-
-        async function fetchMorph(alpha) {
-            const seedA = parseInt(document.getElementById('morph-seed-a').value);
-            const seedB = parseInt(document.getElementById('morph-seed-b').value);
-            const variance = parseFloat(document.getElementById('gen-variance').value);
-
-            try {
-                const res = await fetch('/api/morph', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ seed_a: seedA, seed_b: seedB, alpha, variance, size: 256 })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    document.getElementById('img-face-morph').src = data.data_url;
-                }
-            } catch (err) {
-                console.error(err);
-            }
-        }
-
-        function randomizeSeedA() {
-            document.getElementById('morph-seed-a').value = Math.floor(Math.random() * 10000) + 1;
-            fetchSingleFace(document.getElementById('morph-seed-a').value, 'img-face-a');
-            onMorphSliderChange(document.getElementById('morph-alpha').value);
-        }
-
-        function randomizeSeedB() {
-            document.getElementById('morph-seed-b').value = Math.floor(Math.random() * 10000) + 10001;
-            fetchSingleFace(document.getElementById('morph-seed-b').value, 'img-face-b');
-            onMorphSliderChange(document.getElementById('morph-alpha').value);
-        }
-
-        async function downloadMorphGif() {
-            const seedA = parseInt(document.getElementById('morph-seed-a').value);
-            const seedB = parseInt(document.getElementById('morph-seed-b').value);
-            const variance = parseFloat(document.getElementById('gen-variance').value);
-            const btn = document.getElementById('btn-create-gif');
-            
-            btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Đang tạo GIF động...`;
-            btn.disabled = true;
-
-            try {
-                const response = await fetch('/api/create_gif', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ seed_a: seedA, seed_b: seedB, steps: 18, variance, size: 256 })
-                });
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `morphing_face_${seedA}_to_${seedB}.gif`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            } catch (err) {
-                alert("Lỗi khi tạo GIF: " + err.message);
-            } finally {
-                btn.innerHTML = `<i data-lucide="film" class="w-4 h-4"></i> <span>🎬 Xuất Video GIF Biến Hình Động</span>`;
-                btn.disabled = false;
-                lucide.createIcons();
-            }
-        }
-
-        // ==========================================
-        // LIGHTBOX
-        // ==========================================
-        function openLightbox(url, caption) {
-            document.getElementById('lightbox-img').src = url;
-            document.getElementById('lightbox-caption').innerText = caption;
-            document.getElementById('lightbox-download').href = url;
-            document.getElementById('lightbox-modal').classList.remove('hidden');
-        }
-        function closeLightbox() {
-            document.getElementById('lightbox-modal').classList.add('hidden');
-        }
-
-        // Tự động sinh ảnh ngay khi tải trang lần đầu
-        window.onload = () => {
-            generateFaces();
-        };
-    </script>
+    <script src="/static/js/main.js"></script>
 </body>
 </html>
