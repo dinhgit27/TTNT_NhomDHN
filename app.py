@@ -193,11 +193,31 @@ def main():
         if is_conditional:
             st.markdown("---")
             st.subheader("🏷️ Thuộc Tính Khuôn Mặt (cDCGAN)")
+            preset_choice = st.selectbox(
+                "Bộ thuộc tính mẫu (Preset):",
+                ["Tự chọn", "Nam cười tươi", "Nữ cười tươi", "Đeo kính tri thức", "Nữ tóc vàng", "Nam tóc đen"],
+                index=0
+            )
+            preset_defaults = {
+                "Nam cười tươi": {"Male": True, "Smiling": True},
+                "Nữ cười tươi": {"Male": False, "Smiling": True},
+                "Đeo kính tri thức": {"Eyeglasses": True},
+                "Nữ tóc vàng": {"Male": False, "Blond_Hair": True, "Smiling": True},
+                "Nam tóc đen": {"Male": True, "Black_Hair": True},
+            }
+            active_preset = preset_defaults.get(preset_choice, {})
             selected_vals = []
             for attr in ATTR_NAMES[:num_attrs]:
-                checked = st.checkbox(attr, value=(attr == "Smiling"))
+                default_val = active_preset.get(attr, (attr == "Smiling")) if preset_choice != "Tự chọn" else (attr == "Smiling")
+                checked = st.checkbox(attr, value=default_val, key=f"attr_{attr}_{preset_choice}")
                 selected_vals.append(1.0 if checked else 0.0)
             cond_single = torch.tensor([selected_vals], dtype=torch.float32, device=device)
+
+        with st.expander("ℹ️ Thông Số Kỹ Thuật"):
+            st.markdown(f"- **Latent Dimension ($z$):** {NZ}")
+            st.markdown(f"- **Độ phân giải gốc:** 64×64×3 (RGB)")
+            st.markdown(f"- **Kênh điều kiện:** {num_attrs}")
+            st.markdown(f"- **Thiết bị:** `{device.type.upper()}`")
 
         st.markdown("---")
         st.subheader("🎛️ Tinh Chỉnh Chất Lượng Ảnh")
