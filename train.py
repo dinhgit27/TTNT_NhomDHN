@@ -15,6 +15,7 @@ Nhiệm vụ:
 """
 
 import argparse
+import json
 import os
 import time
 from typing import Optional
@@ -24,7 +25,7 @@ from torch.utils.data import DataLoader
 
 from dataset import get_celeba_dataloader, SELECTED_ATTRS
 from models import build_cDCGAN, ConditionalGenerator
-from utils import ensure_utf8_stdio, generate_and_save_samples, get_preset_conditions
+from utils import ensure_utf8_stdio, generate_and_save_samples, get_preset_conditions, set_seed
 
 
 def auto_detect_device() -> torch.device:
@@ -56,6 +57,7 @@ def get_training_args():
     parser.add_argument("--limit", type=int, default=0, help="Giới hạn số mẫu nạp (0 = toàn bộ, >0 để test nhanh)")
     parser.add_argument("--log-interval", type=int, default=20, help="Tần suất in log (số batch)")
     parser.add_argument("--save-name", type=str, default="generator.pth", help="Tên file trọng số Generator lưu sau mỗi epoch")
+    parser.add_argument("--seed", type=int, default=42, help="Seed ngẫu nhiên khởi tạo")
     return parser.parse_args()
 
 
@@ -63,6 +65,7 @@ def train():
     """Hàm điều khiển toàn bộ quy trình huấn luyện cDCGAN."""
     ensure_utf8_stdio()
     args = get_training_args()
+    set_seed(args.seed)
     device = auto_detect_device()
     
     # Tạo các thư mục lưu kết quả
@@ -119,6 +122,7 @@ def train():
     print(f"Đã lưu ảnh khởi tạo ngẫu nhiên ban đầu tại: {init_sample_path}")
 
     # 5. Vòng lặp huấn luyện chính
+    loss_history = {"epochs": [], "loss_D": [], "loss_G": [], "D_x": [], "D_G_z": []}
     start_total_time = time.time()
 
     for epoch in range(1, args.epochs + 1):
@@ -217,6 +221,15 @@ def train():
         torch.save(payload, epoch_model_path)
 
         print(f"-> Đã lưu trọng số mô hình: '{root_model_path}' và '{epoch_model_path}'\n")
+
+        # 3. Lưu lịch sử loss để vẽ biểu đồ báo cáo
+        loss_history["epochs"].append(epoch)
+        loss_history["loss_D"].append(round(avg_loss_D, 4))
+        loss_history["loss_G"].append(round(avg_loss_G, 4))
+        loss_history["D_x"].append(round(avg_D_x, 4))
+        loss_history["D_G_z"].append(round(avg_D_G_z, 4))
+        with open(os.path.join(args.out_dir, "loss_history.json"), "w", encoding="utf-8") as f:
+            json.dump(loss_history, f, indent=2)
 
     total_training_time = time.time() - start_total_time
     print(f"========================================================")

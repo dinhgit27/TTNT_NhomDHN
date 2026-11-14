@@ -13,6 +13,7 @@ Nhiệm vụ:
 
 import io
 import os
+import random
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
@@ -264,6 +265,15 @@ def generate_morph_gif_bytes(
         loop=0,
     )
     return buf.getvalue()
+
+
+def set_seed(seed: int = 42) -> None:
+    """Thiết lập seed ngẫu nhiên cho tính tái lập (reproducibility)."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def calculate_fid_score(
