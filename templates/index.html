@@ -212,6 +212,14 @@
             </div>
             {% endif %}
 
+            <!-- Speed & Status Bar -->
+            <div class="flex items-center justify-between text-xs text-slate-400 px-1">
+                <span>Khuôn mặt đã sinh:</span>
+                <span id="gen-speed-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                    <i data-lucide="zap" class="w-3.5 h-3.5"></i> <span id="gen-speed-val">--</span>
+                </span>
+            </div>
+
             <!-- Gallery Grid -->
             <div id="gallery-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
                 <!-- Javascript will inject cards here -->
@@ -433,6 +441,12 @@
                 const res = await response.json();
 
                 if (res.success) {
+                    if (res.elapsed_ms) {
+                        const badge = document.getElementById('gen-speed-badge');
+                        document.getElementById('gen-speed-val').innerText = res.elapsed_ms + 'ms';
+                        badge.classList.remove('hidden');
+                        badge.classList.add('flex');
+                    }
                     gallery.innerHTML = res.images.map((item, idx) => `
                         <div class="glass-card rounded-2xl overflow-hidden p-3 flex flex-col items-center group">
                             <div class="relative w-full aspect-square rounded-xl overflow-hidden mb-3 border border-white/5 cursor-pointer" onclick="openLightbox('${item.data_url}', 'Seed: ${item.seed}')">

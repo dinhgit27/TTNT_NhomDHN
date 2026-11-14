@@ -13,6 +13,7 @@ import base64
 import io
 import os
 import random
+import time
 from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -161,6 +162,17 @@ def get_model_info():
     return jsonify(model_meta)
 
 
+@app.route("/api/health")
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "device": str(device),
+        "model_loaded": netG is not None,
+        "model_name": model_meta.get("name", "none"),
+        "type": model_meta.get("type", "unknown"),
+    })
+
+
 @app.route("/api/generate", methods=["POST"])
 def generate_images():
     """Sinh n khuôn mặt từ vector nhiễu (và điều kiện nếu mô hình là cDCGAN)."""
@@ -178,6 +190,7 @@ def generate_images():
     variance = max(0.05, min(2.0, variance))
     base_seed = _parse_seed(data.get("seed"))
     cond = _parse_conditions(data)
+    t0 = time.time()
 
     results: List[Dict[str, Any]] = []
     with torch.no_grad():
@@ -192,7 +205,7 @@ def generate_images():
                 "data_url": _encode_pil_data_url(pil_img),
             })
 
-    return jsonify({"success": True, "base_seed": base_seed, "images": results})
+    return jsonify({"success": True, "base_seed": base_seed, "images": results, "elapsed_ms": round((time.time() - t0) * 1000, 1)})
 
 
 @app.route("/api/morph", methods=["POST"])
@@ -209,6 +222,7 @@ def morph_face():
         return jsonify({"success": False, "error": "Tham số morph không hợp lệ."}), 400
 
     cond = _parse_conditions(data)
+    t0 = time.time()
     torch.manual_seed(seed_a)
     z_a = torch.randn(1, netG.nz, device=device) * variance
     torch.manual_seed(seed_b)
@@ -223,6 +237,7 @@ def morph_face():
         "success": True,
         "alpha": alpha,
         "data_url": _encode_pil_data_url(pil_img),
+        "elapsed_ms": round((time.time() - t0) * 1000, 1),
     })
 
 
@@ -243,6 +258,7 @@ def create_gif():
         return jsonify({"success": False, "error": "steps phải nằm trong khoảng 1..60."}), 400
 
     cond = _parse_conditions(data)
+    t0 = time.time()
     torch.manual_seed(seed_a)
     z_a = torch.randn(1, netG.nz, device=device) * variance
     torch.manual_seed(seed_b)
