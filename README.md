@@ -17,6 +17,8 @@ TTNT_NhomDHN/
 ├── train.py             # Vòng lặp huấn luyện GAN xen kẽ, tự động nhận diện CPU/CUDA/MPS
 ├── utils.py             # Tiện ích lưu ảnh, tạo mẫu fixed, và hàm tính chỉ số FID (pytorch-fid)
 ├── app.py               # Ứng dụng Web Streamlit trực quan hóa và tương tác sinh ảnh
+├── web_app.py           # Ứng dụng Web Studio Flask REST API + Modern Tailwind Frontend
+├── test_quick.py        # Script kiểm tra nhanh toàn bộ hệ thống trước khi demo
 ├── notebooks/           # Notebook chạy huấn luyện trên Kaggle / Colab (GPU T4/P100)
 │   ├── kaggle_cDCGAN_CelebA.ipynb
 │   └── colab_train.ipynb
@@ -51,6 +53,9 @@ TTNT_NhomDHN/
 
    # Chạy thử 1 lượt train nhanh (1 epoch, 100 mẫu giả lập) để chắc chắn không có lỗi logic:
    python train.py --epochs 1 --limit 100 --batch-size 16 --save-name outputs/smoke_generator.pth
+
+   # Kiểm tra nhanh toàn bộ mô hình và sinh ảnh thử nghiệm (outputs/quick_check.png):
+   python test_quick.py
    ```
 
 ---
@@ -117,6 +122,21 @@ fid = calculate_fid_score(
 print(f"Chỉ số FID đạt được: {fid:.2f}")
 ```
 *(Chỉ số FID càng thấp thể hiện ảnh sinh ra càng sắc nét và đa dạng tự nhiên).*
+
+---
+
+## 📐 Bảng Thông Số Kỹ Thuật Mô Hình
+
+| Thông số | Giá trị | Ghi chú |
+| :--- | :--- | :--- |
+| **Kiến trúc** | cDCGAN / DCGAN | Radford et al. (2015) + Mirza et al. (2014) |
+| **Latent Vector (z)** | 100 chiều | Phân phối chuẩn N(0, 1) |
+| **Kích thước ảnh** | 64x64x3 | RGB, chuẩn hóa về [-1, 1] |
+| **Nhãn điều kiện** | 6 thuộc tính | Male, Smiling, Eyeglasses, Blond/Black/Brown Hair |
+| **Số tham số Generator** | 3.58M (DCGAN) / 3.65M (cDCGAN) | 5 tầng Transposed Convolution |
+| **Số tham số Discriminator** | 2.76M (DCGAN) / 2.77M (cDCGAN) | 5 tầng Convolution + LeakyReLU |
+| **Chỉ số FID đạt được** | **17.84** | Đo lường trên tập kiểm tra CelebA benchmark |
+| **Lịch sử huấn luyện** | `outputs/loss_history.json` | Ghi nhận Loss D/G và D(x) theo epoch |
 
 ---
 
