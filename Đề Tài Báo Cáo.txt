@@ -1,0 +1,3 @@
+Sinh ảnh khuôn mặt người bằng GANs (Generative Adversarial Networks):
+Sử dụng các kiến trúc GAN như DCGAN, StyleGAN, hoặc CycleGAN để tạo ra ảnh khuôn mặt người giả nhưng trông thật.
+Đánh giá chất lượng ảnh sinh ra bằng các chỉ số như FID (Fréchet Inception Distance).
